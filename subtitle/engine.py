@@ -232,7 +232,7 @@ def escape_ffmpeg_path(filepath: str) -> str:
 def process_auto_subtitles(
     video_path: str,
     output_dir: str,
-    source_lang: str = "ru",
+    source_lang: str = "auto",
     target_lang: str = "tr",
     progress_callback: Optional[Callable[[int, str, float, str], None]] = None,
     log_callback: Optional[Callable[[str], None]] = None,

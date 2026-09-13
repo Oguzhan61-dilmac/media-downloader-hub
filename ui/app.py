@@ -247,40 +247,13 @@ class MediaDownloaderApp(ctk.CTk):
         langs_grid = ctk.CTkFrame(card, fg_color="transparent")
         langs_grid.pack(fill="x", padx=18, pady=(0, 15))
 
-        # Source Language Dropdown
-        ctk.CTkLabel(
-            langs_grid,
-            text="Kaynak Dil:",
-            font=ctk.CTkFont(family="Segoe UI", size=12),
-            text_color=COLORS["text_secondary"]
-        ).pack(side="left", padx=(0, 6))
-
-        self.sub_src_lang_map = {
-            "Rusça (ru)": "ru",
-            "Otomatik (auto)": "auto",
-            "İngilizce (en)": "en",
-            "Almanca (de)": "de"
-        }
-
-        self.sub_src_menu = ctk.CTkOptionMenu(
-            langs_grid,
-            values=list(self.sub_src_lang_map.keys()),
-            height=32,
-            width=140,
-            fg_color=COLORS["input_bg"],
-            button_color=COLORS["card_border"],
-            font=ctk.CTkFont(family="Segoe UI", size=11)
-        )
-        self.sub_src_menu.set("Rusça (ru)")
-        self.sub_src_menu.pack(side="left", padx=(0, 20))
-
         # Target Language Dropdown
         ctk.CTkLabel(
             langs_grid,
             text="Hedef Çeviri Dili:",
-            font=ctk.CTkFont(family="Segoe UI", size=12),
+            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
             text_color=COLORS["text_secondary"]
-        ).pack(side="left", padx=(0, 6))
+        ).pack(side="left", padx=(0, 8))
 
         self.sub_tgt_lang_map = {
             "Türkçe (tr)": "tr",
@@ -296,7 +269,7 @@ class MediaDownloaderApp(ctk.CTk):
             langs_grid,
             values=list(self.sub_tgt_lang_map.keys()),
             height=32,
-            width=150,
+            width=160,
             fg_color=COLORS["input_bg"],
             button_color=COLORS["card_border"],
             font=ctk.CTkFont(family="Segoe UI", size=11)
@@ -507,7 +480,6 @@ class MediaDownloaderApp(ctk.CTk):
 
         format_opt = self.format_option_menu.get()
         auto_sub = bool(self.auto_sub_check.get())
-        src_lang = self.sub_src_lang_map.get(self.sub_src_menu.get(), "ru")
         
         tgt_val = self.sub_tgt_menu.get()
         tgt_lang = self.sub_tgt_lang_map.get(tgt_val)
@@ -524,7 +496,7 @@ class MediaDownloaderApp(ctk.CTk):
             on_completion=self._safe_on_completion,
             on_log=self.append_log,
             auto_subtitle=auto_sub,
-            sub_source_lang=src_lang,
+            sub_source_lang="auto",
             sub_target_lang=tgt_lang,
             on_sub_progress=self._safe_on_sub_progress
         )

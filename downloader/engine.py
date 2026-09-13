@@ -23,7 +23,7 @@ class DownloaderTask:
         on_completion: Callable[[bool, str, Optional[Dict[str, Any]]], None],
         on_log: Optional[Callable[[str], None]] = None,
         auto_subtitle: bool = False,
-        sub_source_lang: str = "ru",
+        sub_source_lang: str = "auto",
         sub_target_lang: str = "tr",
         on_sub_progress: Optional[Callable[[int, str, float, str], None]] = None
     ):
