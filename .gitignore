@@ -1,0 +1,48 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Executables
+*.exe
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Project output files & media downloads
+*.mp4
+*.webm
+*.mkv
+*.avi
+*.mp3
+*.wav
+*.srt
+*.ass
+*.vtt
+*.log
+config.json
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.swp
+*~
+
+# Temporary build & launcher scripts
+create_desktop_*.py
+write_real_desktop_bat.py
+fix_desktop_launchers.py
+main_subtitle.py
+build_subtitle.py
+README_SUBTITLE.md
+subtitle_engine/
+

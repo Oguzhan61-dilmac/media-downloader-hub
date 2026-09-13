@@ -1,0 +1,7 @@
+customtkinter>=5.2.0
+yt-dlp>=2024.3.10
+pillow>=9.5.0
+pyinstaller>=6.0.0
+faster-whisper>=1.0.0
+deep-translator>=1.11.4
+requests>=2.31.0
