@@ -245,7 +245,7 @@ class MediaDownloaderApp(ctk.CTk):
         self.auto_sub_check.pack(side="left")
 
         langs_grid = ctk.CTkFrame(card, fg_color="transparent")
-        langs_grid.pack(fill="x", padx=18, pady=(0, 15))
+        langs_grid.pack(fill="x", padx=18, pady=(0, 10))
 
         # Target Language Dropdown
         ctk.CTkLabel(
@@ -253,7 +253,7 @@ class MediaDownloaderApp(ctk.CTk):
             text="Hedef Çeviri Dili:",
             font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
             text_color=COLORS["text_secondary"]
-        ).pack(side="left", padx=(0, 8))
+        ).pack(side="left", padx=(0, 6))
 
         self.sub_tgt_lang_map = {
             "Türkçe (tr)": "tr",
@@ -269,13 +269,87 @@ class MediaDownloaderApp(ctk.CTk):
             langs_grid,
             values=list(self.sub_tgt_lang_map.keys()),
             height=32,
-            width=160,
+            width=140,
             fg_color=COLORS["input_bg"],
             button_color=COLORS["card_border"],
             font=ctk.CTkFont(family="Segoe UI", size=11)
         )
         self.sub_tgt_menu.set("Türkçe (tr)")
-        self.sub_tgt_menu.pack(side="left")
+        self.sub_tgt_menu.pack(side="left", padx=(0, 15))
+
+        # Subtitle Style Dropdown
+        ctk.CTkLabel(
+            langs_grid,
+            text="Altyazı Stili:",
+            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+            text_color=COLORS["text_secondary"]
+        ).pack(side="left", padx=(0, 6))
+
+        self.sub_style_map = {
+            "Hormozi / Viral Pop-up": "hormozi",
+            "Minimalist Beyaz Box": "minimalist",
+            "Cyberpunk Neon": "cyberpunk",
+        }
+
+        self.sub_style_menu = ctk.CTkOptionMenu(
+            langs_grid,
+            values=list(self.sub_style_map.keys()),
+            height=32,
+            width=165,
+            fg_color=COLORS["input_bg"],
+            button_color=COLORS["card_border"],
+            font=ctk.CTkFont(family="Segoe UI", size=11)
+        )
+        self.sub_style_menu.set("Hormozi / Viral Pop-up")
+        self.sub_style_menu.pack(side="left", padx=(0, 15))
+
+        # Subtitle Position Dropdown
+        ctk.CTkLabel(
+            langs_grid,
+            text="Hizalama:",
+            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+            text_color=COLORS["text_secondary"]
+        ).pack(side="left", padx=(0, 6))
+
+        self.sub_pos_map = {
+            "Alt (Shorts/Reels)": "bottom",
+            "Orta Hizalama": "center",
+            "Üst Hizalama": "top",
+        }
+
+        self.sub_pos_menu = ctk.CTkOptionMenu(
+            langs_grid,
+            values=list(self.sub_pos_map.keys()),
+            height=32,
+            width=150,
+            fg_color=COLORS["input_bg"],
+            button_color=COLORS["card_border"],
+            font=ctk.CTkFont(family="Segoe UI", size=11)
+        )
+        self.sub_pos_menu.set("Alt (Shorts/Reels)")
+        self.sub_pos_menu.pack(side="left")
+
+        # Creator Automation Controls (Auto-Splitter & AI Denoise)
+        switches_row = ctk.CTkFrame(card, fg_color="transparent")
+        switches_row.pack(fill="x", padx=18, pady=(5, 15))
+
+        self.auto_split_check = ctk.CTkSwitch(
+            switches_row,
+            text="🎬 Shorts Kliplerine Böl (30-60s)",
+            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+            text_color=COLORS["text_primary"],
+            progress_color=COLORS["accent"]
+        )
+        self.auto_split_check.pack(side="left", padx=(0, 25))
+
+        self.clean_audio_check = ctk.CTkSwitch(
+            switches_row,
+            text="🎙️ Arka Plan Gürültüsünü Temizle (AI Denoise)",
+            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+            text_color=COLORS["text_primary"],
+            progress_color=COLORS["accent"]
+        )
+        self.clean_audio_check.pack(side="left")
 
     def _build_progress_card(self):
         """Download progress bar, status metrics, and action buttons."""
@@ -488,6 +562,15 @@ class MediaDownloaderApp(ctk.CTk):
             m = re.search(r"\(([a-z]{2})\)", tgt_val)
             tgt_lang = m.group(1) if m else "tr"
 
+        style_val = self.sub_style_menu.get()
+        sub_style = self.sub_style_map.get(style_val, "hormozi")
+
+        pos_val = self.sub_pos_menu.get()
+        sub_pos = self.sub_pos_map.get(pos_val, "bottom")
+
+        auto_split = bool(self.auto_split_check.get())
+        clean_audio = bool(self.clean_audio_check.get())
+
         self.current_task = DownloaderTask(
             url=url,
             output_dir=self.download_dir,
@@ -498,7 +581,11 @@ class MediaDownloaderApp(ctk.CTk):
             auto_subtitle=auto_sub,
             sub_source_lang="auto",
             sub_target_lang=tgt_lang,
-            on_sub_progress=self._safe_on_sub_progress
+            on_sub_progress=self._safe_on_sub_progress,
+            auto_split=auto_split,
+            subtitle_style=sub_style,
+            subtitle_position=sub_pos,
+            clean_audio=clean_audio
         )
         self.current_task.start()
 
