@@ -1,13 +1,15 @@
 # 🎬 Media Downloader Hub
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Flutter](https://img.shields.io/badge/Mobile-Flutter-02569B.svg?logo=flutter&logoColor=white)](https://flutter.dev/)
 [![CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-blueviolet.svg)](https://github.com/TomSchimansky/CustomTkinter)
 [![yt-dlp](https://img.shields.io/badge/Downloader-yt--dlp-red.svg)](https://github.com/yt-dlp/yt-dlp)
 [![faster-whisper](https://img.shields.io/badge/AI-faster--whisper-orange.svg)](https://github.com/SYSTRAN/faster-whisper)
 [![FFmpeg](https://img.shields.io/badge/Media-FFmpeg-green.svg)](https://ffmpeg.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Media Downloader Hub**, YouTube, Rutube, TikTok ve Instagram Reels gibi populer platformlardan yüksek kalitede video indiren, yapay zeka (`faster-whisper`) ile otomatik ses analizi yapıp Türkçe dahil 7 dilde dikey formatlı (Shorts/Reels) ritmik altyazıları doğrudan videoya gömen (hardsub) gelişmiş bir masaüstü uygulamasıdır.
+**Media Downloader Hub**, YouTube, Rutube, TikTok ve Instagram Reels gibi popüler platformlardan yüksek kalitede video indiren, yapay zeka (`faster-whisper`) ile otomatik ses analizi yapıp Türkçe dahil 7 dilde dikey formatlı (Shorts/Reels) ritmik altyazıları doğrudan videoya gömen (hardsub), akıllı klip parçalayıcı, ses temizleme ve dinamik tipografi şablonları sunan **hibrit masaüstü, mobil (Flutter) ve REST API (FastAPI)** video işleme stüdyosudur.
 
 ---
 
@@ -22,16 +24,19 @@
 - ⚡ **Shorts & TikTok Tarzı Ritmik Altyazı Bölümleme**:
   - `word_timestamps=True` kelime seviyesinde zamanlama ile altyazı blokları maksimum 4-5 kelime veya 25 karaktere parçalanır.
   - Ekranda aynı anda **kesinlikle en fazla 1-2 kısa satır** görünür, kalabalık ve yüzü örten altyazı blokları engellenir.
-- 🌍 **Çoklu Hedef Dil Çevirisi & Bypass Mimarisi**:
-  - Türkçe (`tr`), İngilizce (`en`), İspanyolca (`es`), Almanca (`de`), Fransızca (`fr`), Arapça (`ar`) ve Rusça (`ru`) çeviri desteği.
-  - Kaynak ve hedef dil aynı olduğunda gereksiz çeviri adımı otomatik atlanır (Bypass).
-- 🎨 **Referans Çözünürlüklü Dinamik Tipografi**:
-  - `PlayResX=1080, PlayResY=1920` sabit referans düzlemi sayesinde video çözünürlüğü ne olursa olsun font boyut sapması engellenir.
-  - `FontSize=42`, `Alignment=2` (alt-orta), `MarginV=120` ile ekran altı butonların üstünde, yüz ve göğüs alanlarının altında zarif ve okunaklı görünüm.
-- 📁 **Esnek Dizin Seçimi & Ayar Kalıcılığı**:
-  - İndirme dizini tek tıkla özelleştirilebilir ve `config.json` ile oturumlar arasında korunur.
-- 🌙 **Modern Dark Mode Arayüzü**:
-  - CustomTkinter ile tasarlanmış, kilitlenmeyen arka plan iş parçacıklı (`threading.Thread`) estetik ve akıcı kullanıcı deneyimi.
+- 🎨 **İçerik Üretici Şablonları & Hizalama Mimarisi**:
+  - **Hormozi / Viral Pop-up**: Canlı sarı font (`&H0000FFFF`), 4px siyah kalın kontur ve gölge stili.
+  - **Minimalist Beyaz Box**: Şeffaf koyu kutulu (`&H80000000`) zarif beyaz font.
+  - **Cyberpunk Neon**: Siyan metin (`&H00FFFF00`) ve mor neon kontur (`&H00FF007C`).
+  - **Dinamik Hizalama**: Alt (Shorts/Reels standardı), Orta ve Üst bölge pozisyonlaması.
+- 🎬 **Akıllı Video Parçalayıcı (Auto-Splitter & Clips Generator)**:
+  - Whisper kelime zamanlamaları ve doğal konuşma duraklamalarını analiz eder.
+  - Uzun videoları cümle ortasından kesmeden 30-60 saniyelik Shorts kliplerine böler ve tek tıkla ZIP arşivi olarak sunar.
+- 🎙️ **FFmpeg AI Arka Plan Gürültü Temizleme (Denoise & Voice EQ)**:
+  - `afftdn` FFT tabanlı gürültü azaltma, highpass (`150Hz`), lowpass (`3500Hz`) ve vokal band-pass equalizer filtresi uygular.
+- 📱 **Mobil Uygulama & REST API Mimarisi**:
+  - **FastAPI / Uvicorn REST API**: İstemci-sunucu mimarisiyle arka plan işlerini asenkron yönetir.
+  - **Flutter Cross-Platform App**: Android & iOS telefonlardan kolay kullanım, canlı ilerleme takibi ve doğrudan telefona indirme.
 
 ---
 
@@ -39,7 +44,8 @@
 
 ### 1. Sistem Gereksinimleri
 - **Python**: 3.9 veya daha üzeri.
-- **FFmpeg**: Altyazı gömme (hardsub) işlemleri için sisteminizde `ffmpeg` ve `ffprobe` kurulu ve PATH'e eklenmiş olmalıdır.
+- **FFmpeg**: Altyazı gömme ve ses filtreleri için sisteminizde `ffmpeg` ve `ffprobe` kurulu olmalıdır.
+- **Flutter SDK**: Mobil uygulamayı çalıştırmak için (isteğe bağlı).
 
 ### 2. Depoyu Klonlayın ve Sanal Ortam Oluşturun
 
@@ -64,23 +70,41 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Uygulamayı Çalıştırın
+### 4. Masaüstü Uygulamasını Çalıştırın
 
 ```bash
 python main.py
 ```
 
+### 5. Backend REST API Sunucusunu Çalıştırın
+
+```bash
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+### 6. Flutter Mobil Uygulamasını Çalıştırın
+
+```bash
+cd mobile
+flutter run
+```
+
 ---
 
-## 📦 PyInstaller ile Masaüstü (.EXE) Derleme
+## 📦 PyInstaller ile Masaüstü (.EXE) & Android APK Derleme
 
-Projeyi Python kurulu olmayan bilgisayarlarda çalışabilen **penceresiz (no-console)** bağımsız bir `.exe` dosyasına dönüştürmek için:
-
+### Masaüstü Executable (.exe) Derleme:
 ```bash
 python build.py
 ```
+Oluşturulan executable `dist/MediaDownloaderHub.exe` dizinindedir.
 
-Derleme tamamlandığında oluşturulan executable dosyası `dist/MediaDownloaderHub.exe` dizininde hazır olacaktır. Masaüstü kısayollarını otomatik oluşturmak ve dağıtmak için `python deploy_exe.py` komutunu kullanabilirsiniz.
+### Android APK Derleme:
+```bash
+cd mobile
+flutter build apk --release
+```
+Üretilen APK `mobile/build/app/outputs/flutter-apk/app-release.apk` dizinindedir.
 
 ---
 
@@ -88,24 +112,25 @@ Derleme tamamlandığında oluşturulan executable dosyası `dist/MediaDownloade
 
 ```
 media-downloader-hub/
-├── main.py                  # Uygulama ana giriş noktası (penceresiz başlatma korumalı)
-├── build.py                 # PyInstaller otomatik derleme betiği
+├── main.py                  # Masaüstü GUI uygulama ana giriş noktası
+├── build.py                 # PyInstaller otomatik Windows .exe derleme betiği
 ├── deploy_exe.py            # Masaüstü dağıtım ve kısayol güncelleme betiği
-├── requirements.txt         # Proje bağımlılıkları
+├── test_backend.py          # FastAPI REST API doğrulama ve otomasyon test betiği
+├── requirements.txt         # Python bağımlılıkları
 ├── README.md                # Proje dokümantasyonu
 ├── LICENSE                  # MIT Lisansı
+├── backend/                 # FastAPI REST API & Görev Yöneticisi
+│   ├── main.py              # API endpoint'leri ve CORS yapılandırması
+│   └── task_manager.py      # İlerleme durumu ve asenkron görev takibi
 ├── downloader/
 │   ├── __init__.py
-│   ├── engine.py            # yt-dlp bağlantı stabilizasyonu ve arka plan indirme motoru
+│   ├── engine.py            # yt-dlp bağlantı stabilizasyonu ve indirme motoru
 │   └── utils.py             # URL doğrulama, dosya adı temizleme ve metrik biçimlendiriciler
 ├── subtitle/
 │   ├── __init__.py
-│   └── engine.py            # faster-whisper deşifre, kelime zamanlaması, çeviri ve FFmpeg hardsub motoru
-└── ui/
-    ├── __init__.py
-    ├── app.py               # CustomTkinter GUI ve olay yönetimi
-    └── theme.py             # Renk paleti, stil kuralları ve sabitler
-```
+│   └── engine.py            # faster-whisper deşifre, ASS şablonları, auto-splitter & FFmpeg motoru
+├── mobile/                  # Flutter Mobil Uygulama
+│   ├── lib/
 
 ---
 

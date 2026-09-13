@@ -21,6 +21,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _autoSubtitle = true;
   String _selectedLang = 'tr';
+  bool _autoSplit = false;
+  bool _cleanAudio = false;
+  String _selectedStyle = 'hormozi';
+  String _selectedPosition = 'bottom';
   bool _isProcessing = false;
   
   // Status Tracking State
@@ -40,6 +44,18 @@ class _HomeScreenState extends State<HomeScreen> {
     'Fransızca (fr)': 'fr',
     'Arapça (ar)': 'ar',
     'Rusça (ru)': 'ru',
+  };
+
+  final Map<String, String> _subtitleStyles = {
+    'Hormozi / Viral Pop-up': 'hormozi',
+    'Minimalist Beyaz Box': 'minimalist',
+    'Cyberpunk Neon': 'cyberpunk',
+  };
+
+  final Map<String, String> _subtitlePositions = {
+    'Alt (Shorts/Reels)': 'bottom',
+    'Orta Hizalama': 'center',
+    'Üst Hizalama': 'top',
   };
 
   @override
@@ -97,6 +113,10 @@ class _HomeScreenState extends State<HomeScreen> {
           'url': url,
           'auto_subtitle': _autoSubtitle,
           'target_lang': _selectedLang,
+          'auto_split': _autoSplit,
+          'subtitle_style': _selectedStyle,
+          'subtitle_position': _selectedPosition,
+          'clean_audio': _cleanAudio,
         }),
       ).timeout(const Duration(seconds: 15));
 
@@ -150,7 +170,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _downloadFileToDevice(String serverUrl, String taskId) async {
     setState(() {
-      _stepName = 'Video Telefona İndiriliyor...';
+      _stepName = 'Dosya Telefona İndiriliyor...';
       _detailText = 'Yerel depolamaya kaydediliyor...';
     });
 
@@ -162,7 +182,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (response.statusCode == 200) {
         final bytes = response.bodyBytes;
         final dir = await getApplicationDocumentsDirectory();
-        final fileName = 'media_hub_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        final ext = _autoSplit ? 'zip' : 'mp4';
+        final fileName = 'media_hub_${DateTime.now().millisecondsSinceEpoch}.$ext';
         final file = File('${dir.path}/$fileName');
         await file.writeAsBytes(bytes);
 
@@ -174,9 +195,9 @@ class _HomeScreenState extends State<HomeScreen> {
           _downloadedFilePath = file.path;
         });
 
-        _showSnackBar('Video başarıyla indirildi ve kaydedildi!');
+        _showSnackBar(_autoSplit ? 'Shorts klip arşivi (ZIP) indirildi!' : 'Video başarıyla indirildi!');
       } else {
-        _handleFailure('Video indirme başarısız oldu.');
+        _handleFailure('Dosya indirme başarısız oldu.');
       }
     } catch (e) {
       _handleFailure('Dosya telefona kaydedilemedi: $e');
@@ -329,14 +350,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             Icon(Icons.subtitles_rounded, color: Color(0xFF00E5FF), size: 20),
                             SizedBox(width: 8),
                             Text(
-                              'Otomatik Altyazı Ekle',
+                              'Otomatik Altyazı & Tipografi',
                               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                             ),
                           ],
                         ),
                         Switch(
                           value: _autoSubtitle,
-                          activeColor: const Color(0xFF00E5FF),
+                          activeTrackColor: const Color(0xFF00E5FF),
                           onChanged: (val) {
                             setState(() {
                               _autoSubtitle = val;
@@ -374,7 +395,148 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Altyazı Stili:',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                          DropdownButton<String>(
+                            value: _selectedStyle,
+                            dropdownColor: const Color(0xFF1A1D2B),
+                            style: const TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.bold),
+                            items: _subtitleStyles.entries.map((e) {
+                              return DropdownMenuItem<String>(
+                                value: e.value,
+                                child: Text(e.key),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() {
+                                  _selectedStyle = val;
+                                });
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Altyazı Hizalaması:',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                          DropdownButton<String>(
+                            value: _selectedPosition,
+                            dropdownColor: const Color(0xFF1A1D2B),
+                            style: const TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.bold),
+                            items: _subtitlePositions.entries.map((e) {
+                              return DropdownMenuItem<String>(
+                                value: e.value,
+                                child: Text(e.key),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() {
+                                  _selectedPosition = val;
+                                });
+                              }
+                            },
+                          ),
+                        ],
+                      ),
                     ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Creator Automation Options Card
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.auto_awesome_rounded, color: Color(0xFF7C4DFF), size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'İçerik Üretici Stüdyo Modülleri',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Color(0xFF2E344E), height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Text(
+                                '🎬 Shorts Kliplerine Böl (30-60s)',
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Whisper duraklamalarından kesip ZIP paketler',
+                                style: TextStyle(fontSize: 11, color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: _autoSplit,
+                          activeTrackColor: const Color(0xFF7C4DFF),
+                          onChanged: (val) {
+                            setState(() {
+                              _autoSplit = val;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Text(
+                                '🎙️ Arka Plan Gürültüsünü Temizle (AI)',
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'FFmpeg FFT gürültü filtresi & equalizer uygular',
+                                style: TextStyle(fontSize: 11, color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: _cleanAudio,
+                          activeTrackColor: const Color(0xFF7C4DFF),
+                          onChanged: (val) {
+                            setState(() {
+                              _cleanAudio = val;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

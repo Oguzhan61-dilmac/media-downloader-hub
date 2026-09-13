@@ -25,7 +25,11 @@ class DownloaderTask:
         auto_subtitle: bool = False,
         sub_source_lang: str = "auto",
         sub_target_lang: str = "tr",
-        on_sub_progress: Optional[Callable[[int, str, float, str], None]] = None
+        on_sub_progress: Optional[Callable[[int, str, float, str], None]] = None,
+        auto_split: bool = False,
+        subtitle_style: str = "hormozi",
+        subtitle_position: str = "bottom",
+        clean_audio: bool = False
     ):
         self.url = url
         self.output_dir = output_dir
@@ -37,6 +41,10 @@ class DownloaderTask:
         self.sub_source_lang = sub_source_lang
         self.sub_target_lang = sub_target_lang
         self.on_sub_progress = on_sub_progress
+        self.auto_split = auto_split
+        self.subtitle_style = subtitle_style
+        self.subtitle_position = subtitle_position
+        self.clean_audio = clean_audio
         
         self.cancel_requested = False
         self._thread: Optional[threading.Thread] = None
@@ -201,6 +209,10 @@ class DownloaderTask:
                         output_dir=self.output_dir,
                         source_lang=self.sub_source_lang,
                         target_lang=self.sub_target_lang,
+                        subtitle_style=self.subtitle_style,
+                        subtitle_position=self.subtitle_position,
+                        clean_audio=self.clean_audio,
+                        auto_split=self.auto_split,
                         progress_callback=self.on_sub_progress,
                         log_callback=self._log,
                         cancel_check=lambda: self.cancel_requested

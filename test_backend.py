@@ -13,8 +13,12 @@ def test_backend():
     print("[2] Testing POST /api/process (Mock Video)...")
     payload = {
         "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-        "auto_subtitle": False, # Fast test without subbing
-        "target_lang": "tr"
+        "auto_subtitle": False,
+        "target_lang": "tr",
+        "auto_split": False,
+        "subtitle_style": "hormozi",
+        "subtitle_position": "bottom",
+        "clean_audio": True
     }
     resp = requests.post(f"{BASE_URL}/api/process", json=payload)
     print("    Process Response:", resp.status_code, resp.json())

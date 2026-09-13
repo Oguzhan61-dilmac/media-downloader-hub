@@ -229,11 +229,131 @@ def escape_ffmpeg_path(filepath: str) -> str:
     return clean.replace("'", "'\\\\''")
 
 
+def build_ass_force_style(style_template: str = "hormozi", position: str = "bottom") -> str:
+    """Generates ASS force_style string based on selected template and position."""
+    pos_map = {
+        "bottom": "Alignment=2,MarginV=120",
+        "center": "Alignment=5,MarginV=0",
+        "top": "Alignment=8,MarginV=120"
+    }
+    pos_str = pos_map.get(str(position).lower(), "Alignment=2,MarginV=120")
+
+    style_clean = str(style_template).lower()
+    if style_clean == "minimalist":
+        style_str = "FontName=Arial,FontSize=38,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=3,Outline=2,Shadow=0"
+    elif style_clean == "cyberpunk":
+        style_str = "FontName=Arial,FontSize=42,PrimaryColour=&H00FFFF00,OutlineColour=&H00FF007C,BackColour=&H00000000,BorderStyle=1,Outline=4,Shadow=2"
+    else:
+        # Default: Hormozi / Viral Pop-up (Bold Yellow text, thick black outline)
+        style_str = "FontName=Arial,FontSize=44,PrimaryColour=&H0000FFFF,SecondaryColour=&H0000FF00,OutlineColour=&H00000000,BorderStyle=1,Outline=4,Shadow=2"
+
+    return f"PlayResX=1080,PlayResY=1920,{pos_str},{style_str}"
+
+
+def split_video_into_clips(
+    video_path: str,
+    output_dir: str,
+    segments: List[Dict[str, Any]],
+    ffmpeg_exe: str,
+    force_style: str,
+    clean_audio: bool = False,
+    min_dur: float = 30.0,
+    max_dur: float = 60.0,
+    log_callback: Optional[Callable[[str], None]] = None
+) -> str:
+    """
+    Splits video into 30-60s clips based on natural Whisper pause boundaries.
+    Generates subbed clip MP4s and packages them into a ZIP archive.
+    """
+    import zipfile
+
+    if not segments:
+        return video_path
+
+    base_title = os.path.splitext(os.path.basename(video_path))[0]
+    clips_dir = os.path.join(output_dir, f"{base_title}_clips")
+    os.makedirs(clips_dir, exist_ok=True)
+
+    clip_ranges = []
+    curr_start = segments[0]["start"]
+    curr_end = segments[0]["end"]
+    clip_segs = [segments[0]]
+
+    for seg in segments[1:]:
+        dur = seg["end"] - curr_start
+        if dur >= min_dur:
+            clip_segs.append(seg)
+            curr_end = seg["end"]
+            clip_ranges.append((curr_start, curr_end, list(clip_segs)))
+            curr_start = seg["end"]
+            clip_segs = []
+        else:
+            clip_segs.append(seg)
+            curr_end = seg["end"]
+
+    if clip_segs and (curr_end - curr_start) >= 10.0:
+        clip_ranges.append((curr_start, curr_end, list(clip_segs)))
+
+    if not clip_ranges:
+        clip_ranges.append((segments[0]["start"], segments[-1]["end"], segments))
+
+    generated_clips = []
+    for idx, (c_start, c_end, c_segs) in enumerate(clip_ranges, start=1):
+        adj_segs = []
+        for s in c_segs:
+            adj_segs.append({
+                "start": max(0.0, s["start"] - c_start),
+                "end": max(0.0, s["end"] - c_start),
+                "text": s["text"]
+            })
+
+        clip_srt_path = os.path.join(clips_dir, f"clip_{idx}.srt")
+        clip_srt_content = generate_srt(adj_segs)
+        with open(clip_srt_path, "w", encoding="utf-8") as f:
+            f.write(clip_srt_content)
+
+        clip_mp4_path = os.path.join(clips_dir, f"klip_{idx}.mp4")
+        escaped_clip_srt = escape_ffmpeg_path(os.path.abspath(clip_srt_path))
+        vf_filter = f"subtitles='{escaped_clip_srt}':force_style='{force_style}'"
+
+        audio_args = ["-c:a", "copy"]
+        if clean_audio:
+            audio_args = ["-c:a", "aac", "-af", "afftdn=nr=12:nf=-25,highpass=f=150,lowpass=f=3500,equalizer=f=1000:width_type=h:width=200:g=3"]
+
+        cmd = [
+            ffmpeg_exe, "-y",
+            "-ss", f"{c_start:.2f}",
+            "-to", f"{c_end:.2f}",
+            "-i", video_path,
+            "-vf", vf_filter,
+            "-c:v", "libx264",
+            "-preset", "fast",
+        ] + audio_args + [clip_mp4_path]
+
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if os.path.exists(clip_mp4_path):
+            generated_clips.append(clip_mp4_path)
+
+    zip_path = os.path.join(output_dir, f"{base_title}_shorts_clips.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for clip in generated_clips:
+            zf.write(clip, arcname=os.path.basename(clip))
+
+    if log_callback:
+        log_callback(f"[+] Akıllı Shorts Parçalayıcı: {len(generated_clips)} klip üretildi -> {zip_path}")
+
+    return zip_path
+
+
 def process_auto_subtitles(
     video_path: str,
     output_dir: str,
     source_lang: str = "auto",
     target_lang: str = "tr",
+    subtitle_style: str = "hormozi",
+    subtitle_position: str = "bottom",
+    clean_audio: bool = False,
+    auto_split: bool = False,
     progress_callback: Optional[Callable[[int, str, float, str], None]] = None,
     log_callback: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None
@@ -242,7 +362,7 @@ def process_auto_subtitles(
     Automated pipeline:
     1/3: faster-whisper speech recognition (ru -> timestamps & text)
     2/3: Translation (ru -> tr via deep-translator/free fallback)
-    3/3: FFmpeg Hardsub rendering ([video_title]_altyazili.mp4)
+    3/3: FFmpeg Hardsub rendering & Audio Denoise & Auto-splitter
     """
     def _log(msg: str):
         if log_callback:
@@ -354,7 +474,6 @@ def process_auto_subtitles(
     total_count = len(extracted_segments)
     translated_segments = []
 
-    # If source language and target language are identical, bypass translation API calls
     if effective_src and effective_src.lower() == target_lang.lower():
         _log(f"Kaynak dil ({effective_src.upper()}) ve hedef dil ({target_lang.upper()}) aynı. Çeviri adımı atlanıyor, orijinal transkript kullanılıyor.")
         translated_segments = [dict(seg) for seg in extracted_segments]
@@ -388,36 +507,42 @@ def process_auto_subtitles(
     if _is_cancelled():
         raise RuntimeError("İşlem kullanıcı tarafından iptal edildi.")
 
-    # STEP 3: Burn Subtitles to Video via FFmpeg (3/3)
-    _log("Adım 3/3: Altyazı videoya gömülüyor (FFmpeg Shorts/Mobile Hardsub Stili)...")
+    # STEP 3: Burn Subtitles to Video & Audio Denoise & Auto-Splitter (3/3)
+    _log(f"Adım 3/3: Altyazı videoya gömülüyor (Stil: {subtitle_style.upper()}, Konum: {subtitle_position.upper()})...")
     if progress_callback:
         progress_callback(3, "3/3 Altyazı videoya gömülüyor...", 0.0, "FFmpeg video render başlatılıyor...")
 
     ffmpeg_exe = get_ffmpeg_executable()
     if not ffmpeg_exe:
-        _log("[HATA] FFmpeg sistemde veya imageio kütüphanesinde bulunamadı. Hardsub gömme atlandı, sadece .srt altyazı oluşturuldu.")
+        _log("[HATA] FFmpeg bulunamadı. Hardsub gömme atlandı, sadece .srt altyazı oluşturuldu.")
         return {"srt": srt_path, "video": video_path}
 
-    _log(f"Kullanılan FFmpeg Çalıştırıcısı: {ffmpeg_exe}")
+    force_style = build_ass_force_style(subtitle_style, subtitle_position)
     escaped_srt = escape_ffmpeg_path(os.path.abspath(srt_path))
-
-    # Shorts/Mobile Subtitle Standard ASS force_style with 1080x1920 reference resolution:
-    # PlayResX=1080, PlayResY=1920, FontName=Arial, FontSize=42, Alignment=2 (Bottom Center), MarginV=120 (safe bottom zone),
-    # PrimaryColour=&H0000FFFF (Yellow), OutlineColour=&H00000000 (Black Outline), BorderStyle=1, Outline=3, Shadow=1.5
-    force_style = (
-        "PlayResX=1080,"
-        "PlayResY=1920,"
-        "FontName=Arial,"
-        "FontSize=42,"
-        "Alignment=2,"
-        "MarginV=120,"
-        "PrimaryColour=&H0000FFFF,"
-        "OutlineColour=&H00000000,"
-        "BorderStyle=1,"
-        "Outline=3,"
-        "Shadow=1.5"
-    )
     vf_filter = f"subtitles='{escaped_srt}':force_style='{force_style}'"
+
+    # Audio Denoise Filter Chain
+    audio_args = ["-c:a", "copy"]
+    if clean_audio:
+        _log("🔊 FFmpeg AI Ses Temizleme (afftdn + voice equalizer) uygulanıyor...")
+        audio_args = [
+            "-c:a", "aac",
+            "-af", "afftdn=nr=12:nf=-25,highpass=f=150,lowpass=f=3500,equalizer=f=1000:width_type=h:width=200:g=3"
+        ]
+
+    # Check if Auto-Splitter is enabled
+    if auto_split:
+        _log("✂️ Akıllı Shorts Parçalayıcı aktif! 30-60 saniyelik klipler oluşturuluyor...")
+        zip_clips_path = split_video_into_clips(
+            video_path=video_path,
+            output_dir=output_dir,
+            segments=translated_segments,
+            ffmpeg_exe=ffmpeg_exe,
+            force_style=force_style,
+            clean_audio=clean_audio,
+            log_callback=_log
+        )
+        return {"srt": srt_path, "video": zip_clips_path}
 
     cmd = [
         ffmpeg_exe,
@@ -425,10 +550,8 @@ def process_auto_subtitles(
         "-i", video_path,
         "-vf", vf_filter,
         "-c:v", "libx264",
-        "-preset", "fast",
-        "-c:a", "copy",
-        subtitled_video_path
-    ]
+        "-preset", "fast"
+    ] + audio_args + [subtitled_video_path]
 
     proc = subprocess.Popen(
         cmd,

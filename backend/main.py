@@ -36,6 +36,10 @@ class ProcessRequest(BaseModel):
     auto_subtitle: bool = True
     target_lang: str = "tr"
     format_option: str = "best"
+    auto_split: bool = False
+    subtitle_style: str = "hormozi"
+    subtitle_position: str = "bottom"
+    clean_audio: bool = False
 
 @app.get("/api/health")
 def health_check():
@@ -64,7 +68,6 @@ def process_video(req: ProcessRequest):
     # Progress Callbacks
     def _on_progress(pdata):
         pct = pdata.get("percent_float", 0.0)
-        # Download phase takes 0% to 50% if auto_subtitle enabled, else 0% to 100%
         scaled_pct = (pct * 0.5) if req.auto_subtitle else pct
         speed = pdata.get("speed_str", "")
         eta = pdata.get("eta_str", "")
@@ -79,7 +82,6 @@ def process_video(req: ProcessRequest):
         )
 
     def _on_sub_progress(step_idx, step_name, sub_pct, detail):
-        # Subtitle phase scales from 50% to 100%
         scaled_pct = 50.0 + (sub_pct * 0.5)
         task_manager.update_task(
             task_id,
@@ -93,7 +95,6 @@ def process_video(req: ProcessRequest):
         if success:
             file_path = None
             if extra_info and isinstance(extra_info, dict):
-                # If subtitled video was created, prefer it
                 if extra_info.get("subtitled_video") and os.path.exists(extra_info["subtitled_video"]):
                     file_path = extra_info["subtitled_video"]
                 elif extra_info.get("downloaded_file") and os.path.exists(extra_info["downloaded_file"]):
@@ -133,7 +134,11 @@ def process_video(req: ProcessRequest):
         auto_subtitle=req.auto_subtitle,
         sub_source_lang="auto",
         sub_target_lang=req.target_lang,
-        on_sub_progress=_on_sub_progress
+        on_sub_progress=_on_sub_progress,
+        auto_split=req.auto_split,
+        subtitle_style=req.subtitle_style,
+        subtitle_position=req.subtitle_position,
+        clean_audio=req.clean_audio
     )
 
     task_manager.update_task(

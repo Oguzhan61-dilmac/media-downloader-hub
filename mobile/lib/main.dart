@@ -22,7 +22,6 @@ class MediaDownloaderApp extends StatelessWidget {
           primary: Color(0xFF00E5FF),
           secondary: Color(0xFF7C4DFF),
           surface: Color(0xFF1A1D2B),
-          background: Color(0xFF0F111A),
         ),
         cardTheme: CardThemeData(
           color: const Color(0xFF1A1D2B),
