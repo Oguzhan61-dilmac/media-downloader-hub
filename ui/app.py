@@ -35,8 +35,8 @@ class MediaDownloaderApp(ctk.CTk):
 
         # Window settings
         self.title(f"{APP_TITLE} {APP_VERSION}")
-        self.geometry(f"{WINDOW_WIDTH}x740")
-        self.minsize(740, 660)
+        self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+        self.minsize(800, 850)
         self.configure(fg_color=COLORS["bg_dark"])
 
         # Load saved download directory or fallback to default

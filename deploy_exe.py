@@ -44,6 +44,13 @@ def deploy():
         print(f"[!] HATA: dist/MediaDownloaderHub.exe bulunamadı: {dist_exe}")
         return False
 
+    # Terminate old instances if running to unlock EXE file
+    try:
+        import subprocess
+        subprocess.run(["taskkill", "/F", "/IM", "Media Downloader Hub.exe"], capture_output=True)
+    except Exception:
+        pass
+
     user_profile = os.environ.get("USERPROFILE", r"C:\Users\oğuz")
     
     # Possible desktop directories

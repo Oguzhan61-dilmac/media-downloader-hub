@@ -4,8 +4,8 @@ APP_TITLE = "Media Downloader Hub"
 APP_SUBTITLE = "Rutube & YouTube Masaüstü Video İndirici"
 APP_VERSION = "v1.0.0"
 
-WINDOW_WIDTH = 780
-WINDOW_HEIGHT = 650
+WINDOW_WIDTH = 820
+WINDOW_HEIGHT = 880
 
 # Custom Color Palette (Modern Dark Mode)
 COLORS = {
