@@ -1,0 +1,79 @@
+# Media Downloader Hub - full server stack
+#   cp .env.example .env   (edit SITE_ADDRESS)
+#   docker compose up -d --build
+#
+# api   : FastAPI + yt-dlp + Whisper + FFmpeg, also serves the website
+# pot   : PO token server for YouTube (bgutil-ytdlp-pot-provider)
+# warp  : Cloudflare WARP as an HTTP/SOCKS proxy; only YouTube traffic uses it
+# caddy : HTTPS (automatic Let's Encrypt) in front of the api
+name: media-downloader-hub
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      HF_HOME: /models
+      POT_BASE_URL: http://pot:4416
+      TRUST_PROXY_HEADERS: "1"
+    volumes:
+      - downloads:/data
+      - models:/models
+      - ./cookies:/cookies
+    depends_on:
+      - pot
+      - warp
+    expose:
+      - "8000"
+
+  pot:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    restart: unless-stopped
+    init: true
+    expose:
+      - "4416"
+
+  warp:
+    image: caomingjun/warp:latest
+    restart: unless-stopped
+    device_cgroup_rules:
+      - "c 10:200 rwm"
+    cap_add:
+      - MKNOD
+      - AUDIT_WRITE
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      - WARP_SLEEP=2
+    volumes:
+      - warp-data:/var/lib/cloudflare-warp
+    expose:
+      - "1080"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+
+volumes:
+  downloads:
+  models:
+  warp-data:
+  caddy-data:
+  caddy-config:

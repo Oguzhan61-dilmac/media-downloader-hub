@@ -1,0 +1,17 @@
+.git
+.venv
+venv
+**/__pycache__
+*.pyc
+mobile
+ui
+tests
+build
+dist
+*.spec
+*.mp4
+*.mp3
+*.webm
+*.zip
+deploy/.env
+deploy/cookies

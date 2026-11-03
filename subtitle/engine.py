@@ -1,10 +1,10 @@
 import os
-import sys
 import shutil
 import subprocess
 import re
+import tempfile
 import requests
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Tuple
 
 try:
     from faster_whisper import WhisperModel
@@ -161,31 +161,70 @@ def split_text_into_short_chunks(
     return result_chunks
 
 
+def chunks_from_words(
+    words: List[Dict[str, Any]],
+    max_words: int = 5,
+    max_chars: int = 50
+) -> List[Dict[str, Any]]:
+    """
+    Groups Whisper word timestamps into short subtitle blocks (max 4-5 words).
+    Each block starts on its first word and ends on its last word, so the text
+    appears exactly when it is spoken.
+    """
+    chunks: List[Dict[str, Any]] = []
+    group: List[Dict[str, Any]] = []
+    group_len = 0
+    for w in words:
+        text = str(w.get("word", "")).strip()
+        if not text:
+            continue
+        added = len(text) + (1 if group else 0)
+        if group and (len(group) >= max_words or group_len + added > max_chars):
+            chunks.append(group)
+            group, group_len = [], 0
+            added = len(text)
+        group.append({"start": float(w["start"]), "end": float(w["end"]), "word": text})
+        group_len += added
+    if group:
+        chunks.append(group)
+
+    result = []
+    for g in chunks:
+        start = g[0]["start"]
+        end = max(g[-1]["end"], start + 0.4)
+        result.append({"start": round(start, 2), "end": round(end, 2), "text": " ".join(x["word"] for x in g)})
+    return result
+
+
 def generate_srt(segments: List[Dict[str, Any]]) -> str:
     """
     Generates standard SRT file string.
-    Processes all segments through short-chunk splitting to guarantee strictly max 1-2 short lines per block.
+    Segments that carry Whisper word timestamps are split on real word timings;
+    translated segments (no word timings) are split proportionally.
+    Every block is at most 1-2 short lines.
     """
     all_chunks = []
     for seg in segments:
-        s_start = float(seg.get("start", 0.0))
-        s_end = float(seg.get("end", 0.0))
         raw_text = str(seg.get("text", "")).strip()
         if not raw_text:
             continue
-
-        chunks = split_text_into_short_chunks(s_start, s_end, raw_text, max_words=5, max_chars_per_line=25, max_lines=2)
-        all_chunks.extend(chunks)
+        words = seg.get("words")
+        if words:
+            all_chunks.extend(chunks_from_words(words, max_words=5, max_chars=50))
+        else:
+            s_start = float(seg.get("start", 0.0))
+            s_end = float(seg.get("end", 0.0))
+            all_chunks.extend(split_text_into_short_chunks(s_start, s_end, raw_text, max_words=5, max_chars_per_line=25, max_lines=2))
 
     blocks = []
-    for idx, chunk in enumerate(all_chunks, start=1):
-        start_str = format_timestamp(chunk.get("start", 0.0))
-        end_str = format_timestamp(chunk.get("end", 0.0))
+    idx = 0
+    for chunk in all_chunks:
         raw_text = str(chunk.get("text", "")).strip()
-
         if not raw_text:
             continue
-
+        idx += 1
+        start_str = format_timestamp(chunk.get("start", 0.0))
+        end_str = format_timestamp(chunk.get("end", 0.0))
         wrapped_text = wrap_subtitle_text(raw_text, max_chars_per_line=25, max_lines=2)
         blocks.append(f"{idx}\n{start_str} --> {end_str}\n{wrapped_text}\n")
 
@@ -221,14 +260,6 @@ def translate_text_free(text: str, source_lang: str, target_lang: str) -> str:
     return text
 
 
-def escape_ffmpeg_path(filepath: str) -> str:
-    """Escapes path characters for FFmpeg subtitles filter parameter on Windows."""
-    clean = filepath.replace("\\", "/")
-    if len(clean) >= 2 and clean[1] == ":":
-        clean = clean[0] + "\\:" + clean[2:]
-    return clean.replace("'", "'\\\\''")
-
-
 def build_ass_force_style(style_template: str = "hormozi", position: str = "bottom") -> str:
     """Generates ASS force_style string based on selected template and position."""
     pos_map = {
@@ -250,6 +281,108 @@ def build_ass_force_style(style_template: str = "hormozi", position: str = "bott
     return f"PlayResX=1080,PlayResY=1920,{pos_str},{style_str}"
 
 
+
+class SubtitleCancelled(RuntimeError):
+    """Raised when the user cancels the subtitle pipeline."""
+
+
+AUDIO_CLEAN_FILTER = "afftdn=nr=12:nf=-25,highpass=f=150,lowpass=f=3500,equalizer=f=1000:width_type=h:width=200:g=3"
+
+_TIME_RE = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
+_DURATION_RE = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
+
+
+def burn_subtitles(
+    video_path: str,
+    srt_path: str,
+    output_path: str,
+    force_style: str,
+    ffmpeg_exe: str,
+    clean_audio: bool = False,
+    start: Optional[float] = None,
+    end: Optional[float] = None,
+    progress_callback: Optional[Callable[[float, float, float], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> Tuple[bool, str]:
+    """
+    Burns an SRT file into a video with FFmpeg.
+
+    The subtitles filter has its own escaping rules, and titles containing an
+    apostrophe ("Don't Stop") or a Windows drive letter broke them. To avoid
+    escaping entirely, the SRT is copied to a temporary folder under a fixed
+    ASCII name and FFmpeg runs inside that folder, so the filter only ever sees
+    "subtitles=subs.srt". Input/output paths are normal arguments and need no
+    escaping.
+
+    Returns (success, last FFmpeg error lines).
+    """
+    work_dir = tempfile.mkdtemp(prefix="mdh_sub_")
+    try:
+        shutil.copyfile(srt_path, os.path.join(work_dir, "subs.srt"))
+        vf_filter = f"subtitles=subs.srt:force_style='{force_style}'"
+
+        audio_args = ["-c:a", "copy"]
+        if clean_audio:
+            audio_args = ["-c:a", "aac", "-af", AUDIO_CLEAN_FILTER]
+
+        cmd = [ffmpeg_exe, "-y", "-hide_banner"]
+        if start is not None:
+            cmd += ["-ss", f"{start:.2f}"]
+        if end is not None:
+            cmd += ["-to", f"{end:.2f}"]
+        cmd += [
+            "-i", os.path.abspath(video_path),
+            "-vf", vf_filter,
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-movflags", "+faststart",
+        ] + audio_args + [os.path.abspath(output_path)]
+
+        proc = subprocess.Popen(
+            cmd,
+            cwd=work_dir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            encoding="utf-8",
+            errors="ignore",
+        )
+
+        total_sec = (end - start) if (start is not None and end is not None) else 0.0
+        tail: List[str] = []
+        while True:
+            if cancel_check and cancel_check():
+                proc.kill()
+                proc.wait()
+                raise SubtitleCancelled("İşlem kullanıcı tarafından iptal edildi.")
+
+            line = proc.stderr.readline()
+            if not line and proc.poll() is not None:
+                break
+            if not line:
+                continue
+
+            tail.append(line.rstrip())
+            tail = tail[-8:]
+
+            if total_sec <= 0:
+                m_dur = _DURATION_RE.search(line)
+                if m_dur:
+                    h, m, s = m_dur.groups()
+                    total_sec = int(h) * 3600 + int(m) * 60 + float(s)
+
+            m_time = _TIME_RE.search(line)
+            if m_time and total_sec > 0 and progress_callback:
+                h, m, s = m_time.groups()
+                curr = int(h) * 3600 + int(m) * 60 + float(s)
+                progress_callback(min(100.0, curr / total_sec * 100.0), curr, total_sec)
+
+        ok = proc.wait() == 0 and os.path.exists(output_path)
+        return ok, "\n".join(tail)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
 def split_video_into_clips(
     video_path: str,
     output_dir: str,
@@ -259,7 +392,9 @@ def split_video_into_clips(
     clean_audio: bool = False,
     min_dur: float = 30.0,
     max_dur: float = 60.0,
-    log_callback: Optional[Callable[[str], None]] = None
+    log_callback: Optional[Callable[[str], None]] = None,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> str:
     """
     Splits video into 30-60s clips based on natural Whisper pause boundaries.
@@ -298,41 +433,44 @@ def split_video_into_clips(
         clip_ranges.append((segments[0]["start"], segments[-1]["end"], segments))
 
     generated_clips = []
+    total = len(clip_ranges)
     for idx, (c_start, c_end, c_segs) in enumerate(clip_ranges, start=1):
+        if cancel_check and cancel_check():
+            raise SubtitleCancelled("İşlem kullanıcı tarafından iptal edildi.")
+
         adj_segs = []
         for s in c_segs:
-            adj_segs.append({
+            item = {
                 "start": max(0.0, s["start"] - c_start),
                 "end": max(0.0, s["end"] - c_start),
-                "text": s["text"]
-            })
+                "text": s["text"],
+            }
+            if s.get("words"):
+                item["words"] = [
+                    {"start": max(0.0, w["start"] - c_start), "end": max(0.0, w["end"] - c_start), "word": w["word"]}
+                    for w in s["words"]
+                ]
+            adj_segs.append(item)
 
-        clip_srt_path = os.path.join(clips_dir, f"clip_{idx}.srt")
-        clip_srt_content = generate_srt(adj_segs)
+        clip_srt_path = os.path.join(clips_dir, f"klip_{idx}.srt")
         with open(clip_srt_path, "w", encoding="utf-8") as f:
-            f.write(clip_srt_content)
+            f.write(generate_srt(adj_segs))
 
         clip_mp4_path = os.path.join(clips_dir, f"klip_{idx}.mp4")
-        escaped_clip_srt = escape_ffmpeg_path(os.path.abspath(clip_srt_path))
-        vf_filter = f"subtitles='{escaped_clip_srt}':force_style='{force_style}'"
-
-        audio_args = ["-c:a", "copy"]
-        if clean_audio:
-            audio_args = ["-c:a", "aac", "-af", "afftdn=nr=12:nf=-25,highpass=f=150,lowpass=f=3500,equalizer=f=1000:width_type=h:width=200:g=3"]
-
-        cmd = [
-            ffmpeg_exe, "-y",
-            "-ss", f"{c_start:.2f}",
-            "-to", f"{c_end:.2f}",
-            "-i", video_path,
-            "-vf", vf_filter,
-            "-c:v", "libx264",
-            "-preset", "fast",
-        ] + audio_args + [clip_mp4_path]
-
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if os.path.exists(clip_mp4_path):
+        ok, err_tail = burn_subtitles(
+            video_path, clip_srt_path, clip_mp4_path, force_style, ffmpeg_exe,
+            clean_audio=clean_audio, start=c_start, end=c_end, cancel_check=cancel_check,
+        )
+        if ok:
             generated_clips.append(clip_mp4_path)
+        elif log_callback:
+            log_callback(f"[!] Klip {idx} oluşturulamadı: {err_tail.splitlines()[-1] if err_tail else 'FFmpeg hatası'}")
+
+        if progress_callback:
+            progress_callback(idx / total * 100.0, f"Klip {idx}/{total} hazırlandı")
+
+    if not generated_clips:
+        raise RuntimeError("Hiçbir klip oluşturulamadı (FFmpeg hatası).")
 
     zip_path = os.path.join(output_dir, f"{base_title}_shorts_clips.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -343,6 +481,34 @@ def split_video_into_clips(
         log_callback(f"[+] Akıllı Shorts Parçalayıcı: {len(generated_clips)} klip üretildi -> {zip_path}")
 
     return zip_path
+
+
+def _cuda_available() -> bool:
+    """faster-whisper runs on CTranslate2, so ask it directly (torch is not a dependency)."""
+    try:
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
+    except Exception:
+        return False
+
+
+def load_whisper_model(model_size: str = "base", log: Optional[Callable[[str], None]] = None):
+    if WhisperModel is None:
+        raise RuntimeError("faster-whisper kütüphanesi yüklenemedi. Lütfen 'pip install faster-whisper' çalıştırın.")
+    if _cuda_available():
+        try:
+            if log:
+                log("Whisper Modeli: GPU (CUDA) kullanılıyor...")
+            return WhisperModel(model_size, device="cuda", compute_type="float16")
+        except Exception as cuda_ex:
+            if log:
+                log(f"[!] CUDA GPU başlatılamadı ({cuda_ex}). CPU moduna geçiliyor...")
+    if log:
+        log("Whisper Modeli: CPU (int8) modunda yükleniyor...")
+    try:
+        return WhisperModel(model_size, device="cpu", compute_type="int8")
+    except Exception as cpu_ex:
+        raise RuntimeError(f"Whisper modeli yüklenirken hata oluştu: {cpu_ex}")
 
 
 def process_auto_subtitles(
@@ -357,12 +523,16 @@ def process_auto_subtitles(
     progress_callback: Optional[Callable[[int, str, float, str], None]] = None,
     log_callback: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """
     Automated pipeline:
-    1/3: faster-whisper speech recognition (ru -> timestamps & text)
-    2/3: Translation (ru -> tr via deep-translator/free fallback)
-    3/3: FFmpeg Hardsub rendering & Audio Denoise & Auto-splitter
+    1/3: faster-whisper speech recognition (timestamps & text)
+    2/3: Translation (deep-translator / free fallback)
+    3/3: FFmpeg hardsub rendering, optional audio denoise and Shorts auto-splitter
+
+    Returns {"srt": path, "video": path, "burned": bool, "note": str}.
+    "burned" is False when subtitles could not be put into the video; "video"
+    then points to the original file and "note" explains why.
     """
     def _log(msg: str):
         if log_callback:
@@ -371,8 +541,13 @@ def process_auto_subtitles(
             except Exception:
                 pass
 
-    def _is_cancelled() -> bool:
-        return bool(cancel_check and cancel_check())
+    def _progress(step: int, name: str, pct: float, detail: str):
+        if progress_callback:
+            progress_callback(step, name, pct, detail)
+
+    def _check_cancel():
+        if cancel_check and cancel_check():
+            raise SubtitleCancelled("İşlem kullanıcı tarafından iptal edildi.")
 
     if not os.path.isfile(video_path):
         raise FileNotFoundError(f"Video dosyası bulunamadı: {video_path}")
@@ -387,150 +562,105 @@ def process_auto_subtitles(
     _log("=" * 50)
     _log(f"OTOMATİK ALTYAZI MODÜLÜ BAŞLATILDI: {base_title}")
     _log("Adım 1/3: Ses konuşmaları ve zaman kodları çıkarılıyor (Whisper)...")
+    step1 = "1/3 Ses transkript ediliyor (Whisper)..."
+    _progress(1, step1, 0.0, "Yapay zeka modeli hazırlanıyor...")
 
-    if progress_callback:
-        progress_callback(1, "1/3 Ses transkript ediliyor (Whisper)...", 0.0, "Yapay zeka modeli hazırlanıyor...")
-
-    if WhisperModel is None:
-        raise RuntimeError("faster-whisper kütüphanesi yüklenemedi. Lütfen 'pip install faster-whisper' çalıştırın.")
-
-    model = None
-    try:
-        import torch
-        if torch.cuda.is_available():
-            _log("Whisper Modeli: GPU (CUDA) deneniyor...")
-            model = WhisperModel("base", device="cuda", compute_type="float16")
-    except Exception as cuda_ex:
-        _log(f"[!] CUDA GPU başlatılamadı ({cuda_ex}). CPU moduna geçiliyor...")
-        model = None
-
-    if model is None:
-        _log("Whisper Modeli: CPU (int8) modunda yükleniyor...")
-        try:
-            model = WhisperModel("base", device="cpu", compute_type="int8")
-        except Exception as cpu_ex:
-            raise RuntimeError(f"Whisper modeli yüklenirken hata oluştu: {cpu_ex}")
-
+    model = load_whisper_model("base", _log)
     lang_code = None if source_lang in ("auto", "", None) else source_lang
+
+    def _transcribe(vad: bool):
+        # transcribe() returns a lazy generator: the real work happens while
+        # iterating, so progress is reported per segment as it is decoded.
+        segments_gen, info = model.transcribe(
+            video_path,
+            language=lang_code,
+            beam_size=5,
+            word_timestamps=True,
+            vad_filter=vad,
+        )
+        total_sec = info.duration if info and info.duration else 0.0
+        collected = []
+        for seg in segments_gen:
+            _check_cancel()
+            text_clean = seg.text.strip()
+            if text_clean:
+                collected.append({
+                    "start": float(seg.start),
+                    "end": float(seg.end),
+                    "text": text_clean,
+                    "words": [
+                        {"start": float(w.start), "end": float(w.end), "word": w.word}
+                        for w in (seg.words or [])
+                    ],
+                })
+            if total_sec > 0:
+                pct = min(100.0, (seg.end / total_sec) * 100.0)
+                _progress(1, step1, pct, f"%{pct:.0f} ({seg.end:.0f}s / {total_sec:.0f}s)")
+        return collected, info
 
     _log("Konuşma parçaları analiz ediliyor (Whisper - Kelime Seviyeli Zamanlama)...")
     try:
-        segments_gen, info = model.transcribe(
-            video_path,
-            language=lang_code,
-            beam_size=5,
-            word_timestamps=True,
-            vad_filter=True
-        )
-        segments_list = list(segments_gen)
+        extracted_segments, info = _transcribe(vad=True)
+    except SubtitleCancelled:
+        raise
     except Exception as vad_ex:
-        _log(f"[!] VAD filtresi yüklenemedi ({vad_ex}). VAD filtresiz transkripsiyon moduna geçiliyor...")
-        segments_gen, info = model.transcribe(
-            video_path,
-            language=lang_code,
-            beam_size=5,
-            word_timestamps=True,
-            vad_filter=False
-        )
-        segments_list = list(segments_gen)
+        _log(f"[!] VAD filtresi ile transkripsiyon başarısız ({vad_ex}). VAD filtresiz deneniyor...")
+        extracted_segments, info = _transcribe(vad=False)
 
-    total_sec = info.duration if info and info.duration > 0 else 0.0
-    _log(f"Algılanan Konuşma Dili: {info.language.upper()} (Olasılık: %{info.language_probability * 100:.1f})")
-
-    extracted_segments = []
-    for seg in segments_list:
-        if _is_cancelled():
-            raise RuntimeError("İşlem kullanıcı tarafından iptal edildi.")
-
-        text_clean = seg.text.strip()
-        if text_clean:
-            extracted_segments.append({
-                "start": float(seg.start),
-                "end": float(seg.end),
-                "text": text_clean
-            })
-
-        if total_sec > 0:
-            pct = min(100.0, (seg.end / total_sec) * 100.0)
-            if progress_callback:
-                progress_callback(1, "1/3 Ses transkript ediliyor (Whisper)...", pct, f"%{pct:.0f} ({seg.end:.0f}s / {total_sec:.0f}s)")
+    if info and info.language:
+        _log(f"Algılanan Konuşma Dili: {info.language.upper()} (Olasılık: %{info.language_probability * 100:.1f})")
 
     if not extracted_segments:
         _log("UYARI: Videoda herhangi bir ses veya konuşma tespit edilemedi.")
-        return {"srt": "", "video": video_path}
+        return {"srt": "", "video": video_path, "burned": False, "note": "Videoda konuşma tespit edilemedi."}
 
     _log(f"1/3 Başarılı: {len(extracted_segments)} konuşma segmenti çıkarıldı.")
-
-    if _is_cancelled():
-        raise RuntimeError("İşlem kullanıcı tarafından iptal edildi.")
+    _check_cancel()
 
     # STEP 2: Translation to Target Language (2/3)
     effective_src = info.language if (source_lang in ("auto", "", None) and info and info.language) else source_lang
+    step2 = f"2/3 {target_lang.upper()} diline çevriliyor..."
     _log(f"Adım 2/3: Metinler hedef dile ({target_lang.upper()}) çevriliyor...")
-
-    if progress_callback:
-        progress_callback(2, f"2/3 {target_lang.upper()} diline çevriliyor...", 0.0, "Çeviri hazırlanıyor...")
+    _progress(2, step2, 0.0, "Çeviri hazırlanıyor...")
 
     total_count = len(extracted_segments)
     translated_segments = []
 
     if effective_src and effective_src.lower() == target_lang.lower():
-        _log(f"Kaynak dil ({effective_src.upper()}) ve hedef dil ({target_lang.upper()}) aynı. Çeviri adımı atlanıyor, orijinal transkript kullanılıyor.")
+        _log(f"Kaynak dil ({effective_src.upper()}) ve hedef dil aynı. Orijinal transkript ve kelime zamanlamaları kullanılıyor.")
         translated_segments = [dict(seg) for seg in extracted_segments]
-        if progress_callback:
-            progress_callback(2, f"2/3 {target_lang.upper()} diline çevriliyor...", 100.0, "Kaynak ve hedef dil aynı, orijinal metin kullanıldı.")
+        _progress(2, step2, 100.0, "Kaynak ve hedef dil aynı, orijinal metin kullanıldı.")
     else:
         for i, item in enumerate(extracted_segments, start=1):
-            if _is_cancelled():
-                raise RuntimeError("İşlem kullanıcı tarafından iptal edildi.")
-
-            raw = item["text"]
-            translated_txt = translate_text_free(raw, effective_src, target_lang)
-
+            _check_cancel()
             translated_segments.append({
                 "start": item["start"],
                 "end": item["end"],
-                "text": translated_txt
+                # word timings belong to the source language, so translated text is split proportionally
+                "text": translate_text_free(item["text"], effective_src, target_lang),
             })
-
             pct = (i / total_count) * 100.0
-            if progress_callback:
-                progress_callback(2, f"2/3 {target_lang.upper()} diline çevriliyor...", pct, f"Çevrilen: {i}/{total_count} (%{pct:.0f})")
+            _progress(2, step2, pct, f"Çevrilen: {i}/{total_count} (%{pct:.0f})")
 
-    # Save SRT File
-    srt_content = generate_srt(translated_segments)
     with open(srt_path, "w", encoding="utf-8") as f:
-        f.write(srt_content)
-
+        f.write(generate_srt(translated_segments))
     _log(f"2/3 Başarılı: SRT altyazı dosyası kaydedildi -> {os.path.basename(srt_path)}")
-
-    if _is_cancelled():
-        raise RuntimeError("İşlem kullanıcı tarafından iptal edildi.")
+    _check_cancel()
 
     # STEP 3: Burn Subtitles to Video & Audio Denoise & Auto-Splitter (3/3)
+    step3 = "3/3 Altyazı videoya gömülüyor..."
     _log(f"Adım 3/3: Altyazı videoya gömülüyor (Stil: {subtitle_style.upper()}, Konum: {subtitle_position.upper()})...")
-    if progress_callback:
-        progress_callback(3, "3/3 Altyazı videoya gömülüyor...", 0.0, "FFmpeg video render başlatılıyor...")
+    _progress(3, step3, 0.0, "FFmpeg video render başlatılıyor...")
 
     ffmpeg_exe = get_ffmpeg_executable()
     if not ffmpeg_exe:
         _log("[HATA] FFmpeg bulunamadı. Hardsub gömme atlandı, sadece .srt altyazı oluşturuldu.")
-        return {"srt": srt_path, "video": video_path}
+        return {"srt": srt_path, "video": video_path, "burned": False, "note": "FFmpeg bulunamadı, sadece .srt oluşturuldu."}
 
     force_style = build_ass_force_style(subtitle_style, subtitle_position)
-    escaped_srt = escape_ffmpeg_path(os.path.abspath(srt_path))
-    vf_filter = f"subtitles='{escaped_srt}':force_style='{force_style}'"
-
-    # Audio Denoise Filter Chain
-    audio_args = ["-c:a", "copy"]
     if clean_audio:
-        _log("🔊 FFmpeg AI Ses Temizleme (afftdn + voice equalizer) uygulanıyor...")
-        audio_args = [
-            "-c:a", "aac",
-            "-af", "afftdn=nr=12:nf=-25,highpass=f=150,lowpass=f=3500,equalizer=f=1000:width_type=h:width=200:g=3"
-        ]
+        _log("🔊 FFmpeg ses temizleme (afftdn + voice equalizer) uygulanıyor...")
 
-    # Check if Auto-Splitter is enabled
     if auto_split:
         _log("✂️ Akıllı Shorts Parçalayıcı aktif! 30-60 saniyelik klipler oluşturuluyor...")
         zip_clips_path = split_video_into_clips(
@@ -540,62 +670,25 @@ def process_auto_subtitles(
             ffmpeg_exe=ffmpeg_exe,
             force_style=force_style,
             clean_audio=clean_audio,
-            log_callback=_log
+            log_callback=_log,
+            progress_callback=lambda pct, detail: _progress(3, "3/3 Shorts klipleri hazırlanıyor...", pct, detail),
+            cancel_check=cancel_check,
         )
-        return {"srt": srt_path, "video": zip_clips_path}
+        return {"srt": srt_path, "video": zip_clips_path, "burned": True, "note": ""}
 
-    cmd = [
-        ffmpeg_exe,
-        "-y",
-        "-i", video_path,
-        "-vf", vf_filter,
-        "-c:v", "libx264",
-        "-preset", "fast"
-    ] + audio_args + [subtitled_video_path]
-
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-        encoding="utf-8",
-        errors="ignore"
+    ok, err_tail = burn_subtitles(
+        video_path, srt_path, subtitled_video_path, force_style, ffmpeg_exe,
+        clean_audio=clean_audio,
+        progress_callback=lambda pct, curr, total: _progress(
+            3, "3/3 Altyazı videoya gömülüyor (FFmpeg)...", pct, f"Render: %{pct:.0f} ({curr:.0f}s / {total:.0f}s)"
+        ),
+        cancel_check=cancel_check,
     )
-
-    time_regex = re.compile(r"time=(\d+):(\d+):(\d+\.\d+)")
-    duration_regex = re.compile(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)")
-    render_total_sec = 0.0
-
-    while True:
-        if _is_cancelled():
-            proc.kill()
-            raise RuntimeError("İşlem kullanıcı tarafından iptal edildi.")
-
-        line = proc.stderr.readline()
-        if not line and proc.poll() is not None:
-            break
-
-        if line:
-            if render_total_sec == 0.0:
-                m_dur = duration_regex.search(line)
-                if m_dur:
-                    h, m, s = m_dur.groups()
-                    render_total_sec = int(h) * 3600 + int(m) * 60 + float(s)
-
-            m_time = time_regex.search(line)
-            if m_time and render_total_sec > 0:
-                h, m, s = m_time.groups()
-                curr_sec = int(h) * 3600 + int(m) * 60 + float(s)
-                pct = min(100.0, (curr_sec / render_total_sec) * 100.0)
-                if progress_callback:
-                    progress_callback(3, "3/3 Altyazı videoya gömülüyor (FFmpeg)...", pct, f"Render: %{pct:.0f} ({curr_sec:.0f}s / {render_total_sec:.0f}s)")
-
-    retcode = proc.wait()
-    if retcode != 0:
-        _log(f"[HATA] FFmpeg render hatası verdi (Exit Code: {retcode}). SRT dosyası korundu.")
-        return {"srt": srt_path, "video": video_path}
+    if not ok:
+        last = err_tail.splitlines()[-1] if err_tail else "bilinmeyen hata"
+        _log(f"[HATA] FFmpeg render hatası: {last}. SRT dosyası korundu.")
+        return {"srt": srt_path, "video": video_path, "burned": False, "note": f"FFmpeg hatası ({last}). Altyazı .srt olarak kaydedildi."}
 
     _log(f"3/3 Başarılı: Altyazılı video oluşturuldu -> {os.path.basename(subtitled_video_path)}")
     _log("=" * 50)
-
-    return {"srt": srt_path, "video": subtitled_video_path}
+    return {"srt": srt_path, "video": subtitled_video_path, "burned": True, "note": ""}

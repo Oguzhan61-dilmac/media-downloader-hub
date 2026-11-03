@@ -1,0 +1,10 @@
+# Web server (Docker image) dependencies. The desktop app uses requirements.txt.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+# [default] includes yt-dlp-ejs, needed (with Deno) to solve YouTube's JS challenges
+yt-dlp[default]
+# PO token provider plugin; the token server itself runs as the "pot" container
+bgutil-ytdlp-pot-provider
+faster-whisper>=1.0.0
+deep-translator>=1.11.4
+requests>=2.31.0

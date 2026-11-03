@@ -1,0 +1,48 @@
+#cloud-config
+# Media Downloader Hub - one-shot setup for an Oracle Cloud "Always Free" VM
+# (Ubuntu 24.04, shape VM.Standard.A1.Flex / ARM).
+#
+# Paste this whole file at: Create instance > Show advanced options >
+# Management > "Paste cloud-init script". The VM installs Docker, downloads the
+# code and starts the site by itself (10-20 minutes). Progress log on the VM:
+#   sudo tail -f /var/log/mdh-setup.log
+
+write_files:
+  - path: /opt/mdh-setup.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euxo pipefail
+
+      REPO_URL="https://github.com/Oguzhan61-dilmac/media-downloader-hub.git"
+      BRANCH="web-site"
+      APP_DIR=/opt/media-downloader-hub
+
+      # 1) Oracle's Ubuntu image only allows SSH in its local firewall
+      iptables -I INPUT -p tcp -m state --state NEW -m multiport --dports 80,443 -j ACCEPT
+      netfilter-persistent save || true
+
+      # 2) Docker + compose plugin
+      curl -fsSL https://get.docker.com | sh
+      systemctl enable --now docker
+
+      # 3) Code and config
+      git clone --depth 1 -b "$BRANCH" "$REPO_URL" "$APP_DIR"
+      cd "$APP_DIR/deploy"
+      cp -n .env.example .env
+      PUBLIC_IP=$(curl -fsS https://api.ipify.org || curl -fsS https://ifconfig.me)
+      # HTTPS without buying a domain: 1.2.3.4 -> 1-2-3-4.sslip.io
+      sed -i "s|^SITE_ADDRESS=.*|SITE_ADDRESS=${PUBLIC_IP//./-}.sslip.io|" .env
+      mkdir -p cookies
+      chmod 777 cookies
+
+      # 4) Build and start everything
+      docker compose up -d --build
+
+      # 5) Daily restart; the api container updates yt-dlp each time it starts
+      echo "17 4 * * * root cd $APP_DIR/deploy && docker compose restart api >/dev/null 2>&1" > /etc/cron.d/mdh-update
+
+      echo "KURULUM TAMAM: https://${PUBLIC_IP//./-}.sslip.io"
+
+runcmd:
+  - [bash, -c, "/opt/mdh-setup.sh > /var/log/mdh-setup.log 2>&1"]

@@ -47,3 +47,9 @@ build_subtitle.py
 README_SUBTITLE.md
 subtitle_engine/
 
+
+# Web server secrets and runtime data
+deploy/.env
+deploy/cookies/
+data/
+.pytest_cache/

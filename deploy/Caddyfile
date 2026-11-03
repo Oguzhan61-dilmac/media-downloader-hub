@@ -1,0 +1,20 @@
+# SITE_ADDRESS comes from deploy/.env
+#   example.com           -> automatic HTTPS for your domain
+#   1-2-3-4.sslip.io      -> automatic HTTPS without buying a domain (IP with dashes)
+#   :80                   -> plain HTTP (no certificate)
+{$SITE_ADDRESS::80} {
+	encode gzip
+
+	request_body {
+		max_size 64KB
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		-Server
+	}
+
+	reverse_proxy api:8000
+}

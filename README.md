@@ -115,22 +115,50 @@ media-downloader-hub/
 ├── main.py                  # Masaüstü GUI uygulama ana giriş noktası
 ├── build.py                 # PyInstaller otomatik Windows .exe derleme betiği
 ├── deploy_exe.py            # Masaüstü dağıtım ve kısayol güncelleme betiği
-├── test_backend.py          # FastAPI REST API doğrulama ve otomasyon test betiği
-├── requirements.txt         # Python bağımlılıkları
-├── README.md                # Proje dokümantasyonu
-├── LICENSE                  # MIT Lisansı
-├── backend/                 # FastAPI REST API & Görev Yöneticisi
-│   ├── main.py              # API endpoint'leri ve CORS yapılandırması
-│   └── task_manager.py      # İlerleme durumu ve asenkron görev takibi
+├── requirements.txt         # Masaüstü + API bağımlılıkları
+├── requirements-server.txt  # Web sunucusu (Docker) bağımlılıkları
+├── requirements-dev.txt     # Test bağımlılıkları
+├── backend/                 # FastAPI REST API & görev yöneticisi
+│   ├── main.py              # Endpoint'ler, iş kuyruğu, limitler, YouTube sağlık kontrolü
+│   ├── config.py            # Ortam değişkenlerinden okunan sunucu ayarları
+│   └── task_manager.py      # Görev durumu ve süresi dolan dosyaların temizliği
 ├── downloader/
-│   ├── __init__.py
-│   ├── engine.py            # yt-dlp bağlantı stabilizasyonu ve indirme motoru
-│   └── utils.py             # URL doğrulama, dosya adı temizleme ve metrik biçimlendiriciler
+│   ├── engine.py            # yt-dlp indirme motoru (limitler, proxy, PO token)
+│   └── utils.py             # URL doğrulama, güvenlik kontrolleri, biçimlendiriciler
 ├── subtitle/
-│   ├── __init__.py
-│   └── engine.py            # faster-whisper deşifre, ASS şablonları, auto-splitter & FFmpeg motoru
-├── mobile/                  # Flutter Mobil Uygulama
-│   ├── lib/
+│   └── engine.py            # faster-whisper, ASS şablonları, Shorts parçalayıcı, FFmpeg
+├── web/                     # Web sitesi (link yapıştır → indir)
+├── deploy/                  # Docker, Caddy, Oracle Cloud kurulum betiği ve rehberi
+├── tests/                   # pytest testleri (yerel test videosuyla, internetsiz)
+├── ui/                      # CustomTkinter masaüstü arayüzü
+└── mobile/                  # Flutter mobil uygulama
+```
+
+---
+
+## 🌐 Web Sitesi
+
+Bağlantıyı yapıştır, MP4/MP3 olarak indir; istersen yapay zekâ altyazı ve Shorts klipleri ekle.
+
+**Yerelde denemek için:**
+
+```bash
+pip install -r requirements.txt
+python -m uvicorn backend.main:app --port 8000
+# http://127.0.0.1:8000 adresini aç
+```
+
+**Ücretsiz yayınlamak için:** Oracle Cloud Always Free ARM sunucusuna tek betikle kurulum →
+[deploy/KURULUM.md](deploy/KURULUM.md). Sunucuda YouTube trafiği Cloudflare WARP ve PO token
+sağlayıcısı üzerinden geçer, sağlık kontrolü YouTube'u saatlik test eder; çalışmadığında site
+kullanıcıyı masaüstü uygulamasına yönlendirir.
+
+**Testler:**
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ---
 
@@ -142,6 +170,7 @@ media-downloader-hub/
 | **Media Downloader** | `yt-dlp` | Çoklu platform video/ses akış indirme motoru |
 | **Speech Recognition** | `faster-whisper` | CTranslate2 tabanlı yüksek hızlı OpenAI Whisper modeli |
 | **Translation Engine**| `deep-translator` | Google Translate / DeepL çeviri entegrasyonu |
+| **Web** | `FastAPI` + `Caddy` + `Docker` | REST API, HTTPS ve tek komutla sunucu kurulumu |
 | **Media Processing** | `FFmpeg` | Video işleme, filtreleme ve ASS/SRT hardsub gömme |
 | **Bundler** | `PyInstaller` | Bağımsız Windows `.exe` oluşturucu |
 

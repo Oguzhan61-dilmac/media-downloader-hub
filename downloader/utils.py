@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import socket
+import ipaddress
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -57,6 +59,45 @@ def is_valid_url(url: str) -> bool:
     url = url.strip()
     parsed = urlparse(url)
     return bool(parsed.scheme in ("http", "https") and parsed.netloc)
+
+
+YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
+
+
+def is_youtube_url(url: str) -> bool:
+    """True for youtube.com / youtu.be links (any subdomain such as m. or music.)."""
+    host = (urlparse((url or "").strip()).hostname or "").lower()
+    return any(host == h or host.endswith("." + h) for h in YOUTUBE_HOSTS)
+
+
+def is_public_http_url(url: str) -> bool:
+    """
+    True only if the URL is http(s) and every address its host resolves to is a
+    public internet address. Blocks localhost, private LAN ranges, link-local
+    cloud metadata endpoints (169.254.169.254) and similar, so the public web
+    API can't be used to make the server fetch internal resources.
+    """
+    if not is_valid_url(url):
+        return False
+    parsed = urlparse(url.strip())
+    host = parsed.hostname
+    if not host:
+        return False
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, UnicodeError, ValueError):
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if not ip.is_global or ip.is_multicast:
+            return False
+    return True
 
 def format_bytes(bytes_count: float) -> str:
     """Converts a byte count into a human readable string (e.g. 15.4 MB)."""

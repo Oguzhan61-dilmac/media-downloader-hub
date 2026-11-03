@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Media Downloader Hub</title>
+  <meta name="description" content="Video bağlantısını yapıştır, MP4 veya MP3 olarak indir. İstersen yapay zekâ altyazı ve Shorts klipleri ekler.">
+  <meta name="theme-color" content="#0F111A">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="glow" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="/">
+      <img src="favicon.svg" alt="" width="28" height="28">
+      <span>Media Downloader Hub</span>
+    </a>
+    <a class="toplink" id="desktop-link" href="https://github.com/Oguzhan61-dilmac/media-downloader-hub" target="_blank" rel="noopener">Masaüstü uygulaması</a>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1>Linki yapıştır,<br><span class="accent">videon hazır.</span></h1>
+      <p>YouTube, Rutube, X ve yüzlerce siteden MP4 ya da MP3 indir. İstersen yapay zekâ videoya altyazı ekler, uzun videoyu Shorts kliplerine böler.</p>
+    </section>
+
+    <div class="banner" id="yt-banner" hidden role="status">
+      <strong>YouTube indirmeleri şu an sunucuda çalışmıyor.</strong>
+      <span>Diğer siteler çalışmaya devam ediyor. YouTube için <a id="banner-desktop-link" href="#" target="_blank" rel="noopener">masaüstü uygulamasını</a> kullanabilirsin; indirme kendi bağlantından yapılır.</span>
+    </div>
+
+    <form class="card" id="form" novalidate>
+      <label class="label" for="url">Video bağlantısı</label>
+      <div class="url-row">
+        <input id="url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+               placeholder="https://www.youtube.com/watch?v=..." required>
+        <button type="button" class="btn ghost" id="paste-btn">Yapıştır</button>
+      </div>
+
+      <fieldset class="chips" id="format-group">
+        <legend class="label">Kalite</legend>
+        <label><input type="radio" name="format" value="best" checked><span>En iyi <small>1080p'ye kadar</small></span></label>
+        <label><input type="radio" name="format" value="720p"><span>720p</span></label>
+        <label><input type="radio" name="format" value="480p"><span>480p</span></label>
+        <label><input type="radio" name="format" value="mp3"><span>MP3 <small>sadece ses</small></span></label>
+      </fieldset>
+
+      <details class="studio" id="studio">
+        <summary>
+          <span class="studio-title">Altyazı &amp; Shorts stüdyosu</span>
+          <span class="badge">Yapay zekâ</span>
+        </summary>
+
+        <label class="switch">
+          <input type="checkbox" id="auto_subtitle">
+          <span class="track" aria-hidden="true"></span>
+          <span>Videoya otomatik altyazı ekle</span>
+        </label>
+
+        <div class="studio-grid" id="sub-options">
+          <label>Altyazı dili
+            <select id="target_lang">
+              <option value="tr">Türkçe</option>
+              <option value="en">İngilizce</option>
+              <option value="es">İspanyolca</option>
+              <option value="de">Almanca</option>
+              <option value="fr">Fransızca</option>
+              <option value="ar">Arapça</option>
+              <option value="ru">Rusça</option>
+            </select>
+          </label>
+          <label>Stil
+            <select id="subtitle_style">
+              <option value="hormozi">Viral (sarı, kalın)</option>
+              <option value="minimalist">Minimalist kutu</option>
+              <option value="cyberpunk">Cyberpunk neon</option>
+            </select>
+          </label>
+          <label>Konum
+            <select id="subtitle_position">
+              <option value="bottom">Alt (Shorts/Reels)</option>
+              <option value="center">Orta</option>
+              <option value="top">Üst</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="switch">
+          <input type="checkbox" id="auto_split">
+          <span class="track" aria-hidden="true"></span>
+          <span>30–60 saniyelik Shorts kliplerine böl <small>(ZIP)</small></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="clean_audio">
+          <span class="track" aria-hidden="true"></span>
+          <span>Arka plan gürültüsünü azalt</span>
+        </label>
+        <p class="hint" id="sub-hint">Altyazı için videolar en fazla <b data-limit="max_subtitle_duration_str">5:00</b> uzunluğunda olabilir.</p>
+      </details>
+
+      <p class="error" id="form-error" role="alert" hidden></p>
+
+      <button type="submit" class="btn primary" id="submit-btn">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>İndir</span>
+      </button>
+    </form>
+
+    <section class="card progress" id="progress" hidden aria-live="polite">
+      <div class="progress-head">
+        <div>
+          <p class="step" id="step-name">Başlatılıyor...</p>
+          <p class="detail" id="step-detail"></p>
+        </div>
+        <span class="pct" id="pct">%0</span>
+      </div>
+      <div class="bar"><div class="fill" id="bar-fill"></div></div>
+      <div class="progress-foot">
+        <button type="button" class="btn link" id="cancel-btn">İptal et</button>
+      </div>
+    </section>
+
+    <section class="card result" id="result" hidden>
+      <div class="result-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <p class="result-title">Dosyan hazır</p>
+      <p class="result-file"><span id="result-name"></span> <span class="muted" id="result-size"></span></p>
+      <p class="muted small" id="result-note"></p>
+      <a class="btn primary" id="download-link" href="#" download>Dosyayı indir</a>
+      <button type="button" class="btn link" id="again-btn">Yeni bağlantı indir</button>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Yalnızca hakkına sahip olduğun ya da paylaşımına izin verilen içerikleri indir. Dosyalar <b data-limit="file_ttl_min">60</b> dakika sonra sunucudan silinir.</p>
+    <p><a href="https://github.com/Oguzhan61-dilmac/media-downloader-hub" target="_blank" rel="noopener">GitHub'da açık kaynak</a></p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

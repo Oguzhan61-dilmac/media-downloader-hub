@@ -1,7 +1,5 @@
 import threading
 import os
-import sys
-from pathlib import Path
 from typing import Callable, Optional, Dict, Any
 
 try:
@@ -9,8 +7,12 @@ try:
 except ImportError:
     yt_dlp = None
 
-from downloader.utils import format_bytes, format_speed, format_seconds, clean_filename
+from downloader.utils import format_bytes, format_speed, format_seconds
 from subtitle.engine import process_auto_subtitles
+
+
+class DownloadRejected(Exception):
+    """Raised when a video is refused before downloading (too long, live stream...)."""
 
 
 class DownloaderTask:
@@ -29,7 +31,13 @@ class DownloaderTask:
         auto_split: bool = False,
         subtitle_style: str = "hormozi",
         subtitle_position: str = "bottom",
-        clean_audio: bool = False
+        clean_audio: bool = False,
+        # --- Server / web options (all optional, desktop app leaves them unset) ---
+        proxy: Optional[str] = None,
+        cookies_file: Optional[str] = None,
+        extractor_args: Optional[Dict[str, Dict[str, list]]] = None,
+        max_duration: Optional[int] = None,
+        max_filesize: Optional[int] = None,
     ):
         self.url = url
         self.output_dir = output_dir
@@ -45,15 +53,24 @@ class DownloaderTask:
         self.subtitle_style = subtitle_style
         self.subtitle_position = subtitle_position
         self.clean_audio = clean_audio
-        
+        self.proxy = proxy
+        self.cookies_file = cookies_file
+        self.extractor_args = extractor_args
+        self.max_duration = max_duration
+        self.max_filesize = max_filesize
+
         self.cancel_requested = False
         self._thread: Optional[threading.Thread] = None
 
     def start(self):
-        """Starts the download process in a background daemon thread."""
+        """Starts the download process in a background daemon thread (desktop app)."""
         self.cancel_requested = False
         self._thread = threading.Thread(target=self._run_download, daemon=True)
         self._thread.start()
+
+    def run(self):
+        """Runs the download synchronously in the caller's thread (web job queue)."""
+        self._run_download()
 
     def cancel(self):
         """Signals the downloader task to cancel."""
@@ -67,12 +84,19 @@ class DownloaderTask:
             except Exception:
                 pass
 
+    def _is_audio_only(self) -> bool:
+        fmt = self.format_option.strip()
+        return "Sadece Ses" in fmt or "MP3" in fmt.upper()
+
     def _get_format_spec(self) -> Dict[str, Any]:
         """Maps user selection to yt-dlp format parameters."""
         fmt = self.format_option.strip()
-        opts = {}
+        opts: Dict[str, Any] = {}
 
-        if "Sadece Ses" in fmt or "MP3" in fmt:
+        if fmt == "__probe__":
+            # Smallest possible real download, used by the server's YouTube health check
+            opts["format"] = "worstaudio/worst"
+        elif self._is_audio_only():
             opts["format"] = "bestaudio/best"
             opts["postprocessors"] = [{
                 "key": "FFmpegExtractAudio",
@@ -88,6 +112,10 @@ class DownloaderTask:
         else:  # En İyi Kalite MP4 (Default)
             opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 
+        if fmt != "__probe__" and not self._is_audio_only():
+            # Separate video+audio streams that can't go into MP4 (e.g. webm+opus) are still merged into MP4
+            opts["merge_output_format"] = "mp4"
+
         return opts
 
     def _progress_hook(self, d: Dict[str, Any]):
@@ -96,12 +124,13 @@ class DownloaderTask:
             raise yt_dlp.utils.DownloadCancelled("Kullanıcı tarafından iptal edildi.")
 
         status = d.get("status")
-        
+
         if status == "downloading":
-            downloaded = d.get("downloaded_bytes", 0)
-            total = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
-            speed = d.get("speed", 0)
-            eta = d.get("eta", 0)
+            # yt-dlp may send these keys with a None value, so `or` instead of .get() defaults
+            downloaded = d.get("downloaded_bytes") or 0
+            total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+            speed = d.get("speed")
+            eta = d.get("eta")
             filename = d.get("filename", "")
 
             percent = (downloaded / total * 100.0) if total > 0 else 0.0
@@ -132,77 +161,112 @@ class DownloaderTask:
             }
             self.on_progress(progress_data)
 
+    def _build_ydl_opts(self) -> Dict[str, Any]:
+        ydl_opts: Dict[str, Any] = {
+            # .150B keeps very long titles from exceeding filesystem name limits
+            "outtmpl": os.path.join(self.output_dir, "%(title).150B.%(ext)s"),
+            "progress_hooks": [self._progress_hook],
+            "noplaylist": True,          # a link with &list= downloads only that video
+            "ignoreerrors": False,
+            "logtostderr": False,
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": True,
+            "windowsfilenames": True,
+            "socket_timeout": 30,
+            "retries": 10,
+            "fragment_retries": 10,
+            "file_access_retries": 5,
+            "http_chunk_size": 10485760,  # 10MB chunks
+        }
+        # Note: no custom User-Agent / player_client overrides and TLS verification stays ON.
+        # yt-dlp picks per-client headers itself; forcing a desktop Chrome UA on mobile
+        # clients is a common cause of 403s. Keep yt-dlp updated instead.
+
+        if self.proxy:
+            ydl_opts["proxy"] = self.proxy
+        if self.cookies_file and os.path.isfile(self.cookies_file):
+            ydl_opts["cookiefile"] = self.cookies_file
+        if self.extractor_args:
+            ydl_opts["extractor_args"] = self.extractor_args
+        if self.max_filesize:
+            ydl_opts["max_filesize"] = int(self.max_filesize)
+
+        ydl_opts.update(self._get_format_spec())
+        return ydl_opts
+
+    def _check_limits(self, info: Dict[str, Any]):
+        if info.get("_type") in ("playlist", "multi_video") and not info.get("formats"):
+            raise DownloadRejected("Oynatma listeleri desteklenmiyor. Lütfen tek bir videonun bağlantısını girin.")
+        if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
+            raise DownloadRejected("Canlı yayınlar indirilemiyor.")
+        duration = info.get("duration")
+        if self.max_duration and duration and duration > self.max_duration:
+            raise DownloadRejected(
+                f"Video çok uzun ({format_seconds(duration)}). "
+                f"Bu seçenek için en fazla {format_seconds(self.max_duration)} uzunluğunda videolar indirilebiliyor."
+            )
+
+    @staticmethod
+    def _resolve_output_file(info: Optional[Dict[str, Any]]) -> Optional[str]:
+        """Final file path after merging/post-processing (e.g. the .mp3, not the source .webm)."""
+        if not info:
+            return None
+        for item in info.get("requested_downloads") or []:
+            path = item.get("filepath")
+            if path and os.path.exists(path):
+                return path
+        path = info.get("filepath")
+        if path and os.path.exists(path):
+            return path
+        return None
+
     def _run_download(self):
         if yt_dlp is None:
             self.on_completion(False, "yt-dlp kütüphanesi yüklü değil! Lütfen requirements.txt içindeki paketleri yükleyin.", None)
             return
 
-        out_template = os.path.join(self.output_dir, "%(title)s.%(ext)s")
-        
-        ydl_opts = {
-            "outtmpl": out_template,
-            "progress_hooks": [self._progress_hook],
-            "nocheckcertificate": True,
-            "ignoreerrors": False,
-            "logtostderr": False,
-            "quiet": True,
-            "no_warnings": True,
-            # Windows long path fix & compatibility
-            "windowsfilenames": True,
-            # Timeout, retries & chunk size stability settings for googlevideo streams
-            "socket_timeout": 30,
-            "retries": 10,
-            "fragment_retries": 10,
-            "file_access_retries": 5,
-            "http_chunk_size": 10485760,  # 10MB chunking to prevent throttling & timeout
-            "buffersize": 1024 * 64,
-            "concurrent_fragment_downloads": 1,
-            # YouTube 403 Forbidden prevention & bot protection bypass
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "ios", "web"],
-                }
-            },
-            "http_headers": {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                    " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                ),
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-        }
-
-        # Merge format specs
-        ydl_opts.update(self._get_format_spec())
+        os.makedirs(self.output_dir, exist_ok=True)
+        ydl_opts = self._build_ydl_opts()
 
         self._log(f"İndirme başlatılıyor: {self.url}")
-        self._log(f"Hedef Dizün: {self.output_dir}")
+        self._log(f"Hedef Dizin: {self.output_dir}")
         self._log(f"Format Modu: {self.format_option}")
 
-        info_dict = None
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(self.url, download=True)
-                
+                # Read metadata first so length/live limits are checked before any bytes are downloaded
+                info = ydl.extract_info(self.url, download=False)
+                if info is None:
+                    raise DownloadRejected("Video bilgisi alınamadı.")
+                self._check_limits(info)
+                info = ydl.process_ie_result(info, download=True)
+
             if self.cancel_requested:
                 self.on_completion(False, "İndirme kullanıcı tarafından iptal edildi.", None)
                 return
 
-            video_title = info_dict.get("title", "Medya Dosyası") if info_dict else "Medya Dosyası"
-            downloaded_file = ydl.prepare_filename(info_dict) if info_dict else None
+            video_title = info.get("title", "Medya Dosyası") if info else "Medya Dosyası"
+            downloaded_file = self._resolve_output_file(info)
 
-            # Fallback file search if prepare_filename doesn't find exact match
-            if downloaded_file and not os.path.exists(downloaded_file):
-                ext = info_dict.get("ext", "mp4")
-                possible_file = os.path.join(self.output_dir, f"{video_title}.{ext}")
-                if os.path.exists(possible_file):
-                    downloaded_file = possible_file
+            if not downloaded_file:
+                limit_note = ""
+                if self.max_filesize:
+                    limit_note = f" Dosya {format_bytes(self.max_filesize)} sınırını aşıyor olabilir."
+                self.on_completion(False, f"Video indirilemedi, çıktı dosyası oluşmadı.{limit_note}", None)
+                return
 
             self._log(f"Başarıyla indirildi: {video_title}")
+            result: Dict[str, Any] = {
+                "title": video_title,
+                "downloaded_file": downloaded_file,
+                "subtitled_video": None,
+                "srt": None,
+                "extractor": info.get("extractor_key"),
+            }
 
-            # Trigger Auto Subtitle Module if requested
-            if self.auto_subtitle and downloaded_file and os.path.exists(downloaded_file):
-                self._log("Otomatik Türkçe Altyazı Ekleme modülü başlatılıyor...")
+            if self.auto_subtitle and not self._is_audio_only():
+                self._log("Otomatik altyazı modülü başlatılıyor...")
                 try:
                     sub_res = process_auto_subtitles(
                         video_path=downloaded_file,
@@ -217,21 +281,37 @@ class DownloaderTask:
                         log_callback=self._log,
                         cancel_check=lambda: self.cancel_requested
                     )
-                    final_video = sub_res.get("video", downloaded_file)
-                    self.on_completion(
-                        True,
-                        f"Video indirildi ve Türkçe altyazı eklendi!\nDosya: '{os.path.basename(final_video)}'",
-                        info_dict
-                    )
+                    result["srt"] = sub_res.get("srt") or None
+                    if sub_res.get("burned"):
+                        result["subtitled_video"] = sub_res.get("video")
+                        self.on_completion(
+                            True,
+                            f"Video indirildi ve altyazı eklendi!\nDosya: '{os.path.basename(sub_res['video'])}'",
+                            result
+                        )
+                    else:
+                        reason = sub_res.get("note") or "Altyazı videoya gömülemedi."
+                        self.on_completion(
+                            True,
+                            f"Video indirildi fakat altyazı eklenemedi: {reason}\nDosya: '{os.path.basename(downloaded_file)}'",
+                            result
+                        )
                 except Exception as sub_ex:
+                    if self.cancel_requested:
+                        self.on_completion(False, "İşlem kullanıcı tarafından iptal edildi.", None)
+                        return
                     self._log(f"[HATA] Otomatik Altyazı Ekleme Başarısız: {sub_ex}")
                     self.on_completion(
                         True,
                         f"Video indirildi fakat altyazı eklenirken hata oluştu:\n{sub_ex}\nDosya: '{os.path.basename(downloaded_file)}'",
-                        info_dict
+                        result
                     )
             else:
-                self.on_completion(True, f"İndirme tamamlandı:\n'{video_title}'", info_dict)
+                self.on_completion(True, f"İndirme tamamlandı:\n'{video_title}'", result)
+
+        except DownloadRejected as rej:
+            self._log(f"Reddedildi: {rej}")
+            self.on_completion(False, str(rej), None)
 
         except yt_dlp.utils.DownloadCancelled:
             self._log("İndirme iptal edildi.")
@@ -240,25 +320,31 @@ class DownloaderTask:
         except yt_dlp.utils.DownloadError as de:
             err_msg = str(de)
             self._log(f"İndirme Hatası: {err_msg}")
-            
-            user_err = "İndirme sırasında bir hata oluştu."
-            if "Unsupported URL" in err_msg or "is not a valid URL" in err_msg:
-                user_err = "Geçersiz veya desteklenmeyen video adresi (URL).\nLütfen bağlantıyı kontrol edin."
-            elif "Private video" in err_msg:
-                user_err = "Bu video gizli veya erişime kapalı."
-            elif "Video unavailable" in err_msg:
-                user_err = "Video bulunamadı veya silinmiş."
-            elif "HTTP Error 404" in err_msg:
-                user_err = "Sayfa bulunamadı (404 Error)."
-            elif "HTTP Error 403" in err_msg or "Forbidden" in err_msg:
-                user_err = "Erişim reddedildi (403 Forbidden). Bağlantı veya sunucu kısıtlaması."
-            else:
-                clean_err = err_msg.split("\n")[0] if "\n" in err_msg else err_msg
-                user_err = f"İndirme başarısız:\n{clean_err}"
-
-            self.on_completion(False, user_err, None)
+            self.on_completion(False, friendly_error(err_msg), None)
 
         except Exception as ex:
             self._log(f"Bilinmeyen Hata: {str(ex)}")
             self.on_completion(False, f"Beklenmeyen bir hata oluştu:\n{str(ex)}", None)
 
+
+def friendly_error(err_msg: str) -> str:
+    """Turns a raw yt-dlp error into a short Turkish message."""
+    if "Sign in to confirm" in err_msg or "not a bot" in err_msg:
+        return ("YouTube bu sunucuyu bot olarak işaretledi. "
+                "Biraz sonra tekrar deneyin ya da masaüstü uygulamasını kullanın.")
+    if "Unsupported URL" in err_msg or "is not a valid URL" in err_msg:
+        return "Geçersiz veya desteklenmeyen video adresi (URL).\nLütfen bağlantıyı kontrol edin."
+    if "Private video" in err_msg:
+        return "Bu video gizli veya erişime kapalı."
+    if "Video unavailable" in err_msg:
+        return "Video bulunamadı veya silinmiş."
+    if "age" in err_msg.lower() and "confirm" in err_msg.lower():
+        return "Bu video yaş doğrulaması istiyor, sunucudan indirilemiyor."
+    if "HTTP Error 404" in err_msg:
+        return "Sayfa bulunamadı (404 Error)."
+    if "HTTP Error 403" in err_msg or "Forbidden" in err_msg:
+        return "Erişim reddedildi (403 Forbidden). Bağlantı veya sunucu kısıtlaması."
+    if "Requested format is not available" in err_msg:
+        return "Seçilen kalite bu video için mevcut değil. Başka bir kalite deneyin."
+    clean_err = err_msg.split("\n")[0]
+    return f"İndirme başarısız:\n{clean_err}"
