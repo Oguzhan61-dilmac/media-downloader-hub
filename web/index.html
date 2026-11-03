@@ -6,6 +6,12 @@
   <title>Media Downloader Hub</title>
   <meta name="description" content="Video bağlantısını yapıştır, MP4 veya MP3 olarak indir. İstersen yapay zekâ altyazı ve Shorts klipleri ekler.">
   <meta name="theme-color" content="#0F111A">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Media Downloader Hub — Linki yapıştır, videon hazır">
+  <meta property="og:description" content="Video bağlantısını yapıştır, MP4 veya MP3 olarak indir. Yapay zekâ altyazı ve Shorts klipleri.">
+  <meta property="og:image" content="/og-image.png">
+  <meta property="og:locale" content="tr_TR">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -100,6 +106,8 @@
         <p class="hint" id="sub-hint">Altyazı için videolar en fazla <b data-limit="max_subtitle_duration_str">5:00</b> uzunluğunda olabilir.</p>
       </details>
 
+      <div class="turnstile" id="turnstile" hidden></div>
+
       <p class="error" id="form-error" role="alert" hidden></p>
 
       <button type="submit" class="btn primary" id="submit-btn">
@@ -136,7 +144,12 @@
 
   <footer class="footer">
     <p>Yalnızca hakkına sahip olduğun ya da paylaşımına izin verilen içerikleri indir. Dosyalar <b data-limit="file_ttl_min">60</b> dakika sonra sunucudan silinir.</p>
-    <p><a href="https://github.com/Oguzhan61-dilmac/media-downloader-hub" target="_blank" rel="noopener">GitHub'da açık kaynak</a></p>
+    <nav class="footer-links">
+      <a href="/kullanim-sartlari.html">Kullanım Şartları</a>
+      <a href="/gizlilik.html">Gizlilik ve KVKK</a>
+      <a href="mailto:" data-contact hidden>İletişim / Telif bildirimi</a>
+      <a href="https://github.com/Oguzhan61-dilmac/media-downloader-hub" target="_blank" rel="noopener">GitHub</a>
+    </nav>
   </footer>
 
   <script src="app.js"></script>

@@ -33,8 +33,12 @@ write_files:
       PUBLIC_IP=$(curl -fsS https://api.ipify.org || curl -fsS https://ifconfig.me)
       # HTTPS without buying a domain: 1.2.3.4 -> 1-2-3-4.sslip.io
       sed -i "s|^SITE_ADDRESS=.*|SITE_ADDRESS=${PUBLIC_IP//./-}.sslip.io|" .env
-      mkdir -p cookies
+      mkdir -p cookies config
       chmod 777 cookies
+      [ -f config/blocklist.txt ] || printf '%s\n' \
+        '# Telif şikâyeti gelen içerikler: her satıra bir video ID ya da URL parçası.' \
+        '# Örnek: dQw4w9WgXcQ   veya   instagram.com/reel/ABC123' \
+        '# Kaydetmen yeterli, yeniden başlatmaya gerek yok.' > config/blocklist.txt
 
       # 4) Build and start everything
       docker compose up -d --build

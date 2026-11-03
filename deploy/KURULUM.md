@@ -53,6 +53,30 @@ ssh -i indirdigin-anahtar.key ubuntu@<IP>
 sudo tail -f /var/log/mdh-setup.log
 ```
 
+## 5. Kendi alan adınla canlıya alma
+
+Önce sslip.io adresinde her şeyin çalıştığını gör, sonra alan adına geç.
+
+1. **Alan adını seç.** İçinde YouTube, Instagram, TikTok gibi marka adları geçmesin. Marka sahipleri bu tür alan adlarını şikâyetle geri alabiliyor.
+2. **DNS kayıtları:** `@` ve `www` için **A kaydı → sunucunun IP adresi**.
+   Cloudflare DNS kullanıyorsan iki kaydı da **"DNS only" (gri bulut)** yap. Cloudflare, kendi dışında barındırılan video dosyalarının CDN'den geçirilmesini kısıtlıyor; HTTPS sertifikasını zaten Caddy alıyor.
+3. **Sunucuda ayarları değiştir:**
+   ```bash
+   cd /opt/media-downloader-hub/deploy
+   sudo nano .env
+   #   SITE_ADDRESS=ornek.com, www.ornek.com
+   #   CONTACT_EMAIL=iletisim@ornek.com
+   sudo docker compose up -d
+   ```
+   Caddy sertifikayı birkaç dakika içinde alır. `www.ornek.com` otomatik olarak `ornek.com`'a yönlenir.
+4. **Bot koruması (ücretsiz):** Cloudflare panelinde **Turnstile → Add widget**, hostname olarak alan adını gir. Verilen anahtarları `.env` içindeki `TURNSTILE_SITE_KEY` ve `TURNSTILE_SECRET_KEY` satırlarına yaz, `sudo docker compose up -d`. Bu, botların sunucunu indirme makinesi olarak kullanmasını engeller.
+5. **Yasal sayfalar:** `web/kullanim-sartlari.html` ve `web/gizlilik.html` birer şablon. Yayına almadan önce bir hukukçuya kontrol ettir.
+6. **Telif şikâyeti gelirse:** Video ID'sini ya da bağlantının bir parçasını `deploy/config/blocklist.txt` dosyasına yeni satır olarak ekle. Kaydettiğin anda geçerli olur, yeniden başlatma gerekmez.
+7. **Arama motoru:** Google Search Console'a siteyi ekle ve `https://ornek.com/sitemap.xml` adresini gönder.
+8. **İzleme:** Ücretsiz bir çalışma süresi (uptime) servisine `https://ornek.com/api/health` adresini ekle; site çökerse e-posta alırsın.
+
+**Trafik artınca:** Ücretsiz sunucuda aynı anda 2 iş çalışır, gerisi sıraya girer. 4 OCPU / 24 GB'a çıkarsan `.env` içinde `MAX_CONCURRENT_JOBS=4` yapabilirsin. Whisper (altyazı) en ağır kısım; sunucu zorlanırsa `ALLOW_SUBTITLES=0` ile kapat. Tüm YouTube indirmeleri tek bir WARP çıkışından geçtiği için yoğun kullanımda YouTube bu çıkışı da yavaşlatabilir; saatlik limitler bunu dengelemek için var.
+
 ## Kontroller
 
 ```bash
@@ -84,6 +108,8 @@ Sunucu her saat (sorun varken 10 dakikada bir) tekrar dener ve düzelince uyarı
 | `RATE_LIMIT_PER_HOUR` | 15 | Kişi (IP) başına saatlik indirme |
 | `FILE_TTL_MIN` | 60 | Dosyaların sunucuda kalma süresi (dakika) |
 | `ALLOW_SUBTITLES` | 1 | Sunucu zorlanırsa `0` yap, altyazı stüdyosu kapanır |
+| `CONTACT_EMAIL` | boş | Yasal sayfalarda ve telif bildirimi için gösterilen adres |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | boş | İkisi de doluysa bot doğrulaması açılır |
 
 Değişiklikten sonra: `sudo docker compose up -d`
 

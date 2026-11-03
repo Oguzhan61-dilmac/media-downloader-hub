@@ -349,6 +349,18 @@ form .btn.primary { margin-top: 20px; }
   text-align: center;
 }
 .footer p { margin: 4px 0; }
+.footer-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; margin-top: 10px; }
+.footer-links a { color: var(--muted); }
+.footer-links a:hover { color: var(--text); }
+.turnstile { margin-top: 18px; display: flex; justify-content: center; min-height: 65px; }
+
+/* legal pages */
+.legal { max-width: 760px; }
+.legal h1 { font-size: clamp(28px, 5vw, 38px); letter-spacing: -.02em; margin: 24px 0 6px; }
+.legal h2 { font-size: 18px; margin: 28px 0 8px; }
+.legal p, .legal li { color: #C9CEDD; }
+.legal ul { padding-left: 20px; }
+.legal .updated { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
 
 @media (max-width: 560px) {
   .chips { grid-template-columns: repeat(2, 1fr); }

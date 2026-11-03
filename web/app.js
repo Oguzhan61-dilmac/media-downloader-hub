@@ -19,6 +19,8 @@
   let pollTimer = null;
   let currentTask = null;
   let health = null;
+  let turnstileToken = null;
+  let turnstileWidget = null;
 
   // ---------- helpers
   const store = {
@@ -86,8 +88,42 @@
         $("banner-desktop-link").href = health.desktop_app_url;
       }
       $("yt-banner").hidden = !(health.youtube && health.youtube.ok === false);
+      if (health.contact_email) {
+        document.querySelectorAll("[data-contact]").forEach((a) => {
+          a.href = `mailto:${health.contact_email}`;
+          a.hidden = false;
+        });
+      }
+      if (health.turnstile_site_key) initTurnstile(health.turnstile_site_key);
       syncStudio();
     } catch { /* site still works without it */ }
+  }
+
+  // ---------- bot protection (Cloudflare Turnstile, only when the server enables it)
+  function initTurnstile(siteKey) {
+    const box = $("turnstile");
+    box.hidden = false;
+    window.__mdhTurnstileReady = () => {
+      turnstileWidget = window.turnstile.render("#turnstile", {
+        sitekey: siteKey,
+        theme: "dark",
+        callback: (token) => { turnstileToken = token; },
+        "expired-callback": () => { turnstileToken = null; },
+        "error-callback": () => { turnstileToken = null; },
+      });
+    };
+    const s = document.createElement("script");
+    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=__mdhTurnstileReady";
+    s.async = true;
+    document.head.appendChild(s);
+  }
+
+  function resetTurnstile() {
+    // tokens are single use
+    turnstileToken = null;
+    if (window.turnstile && turnstileWidget !== null) {
+      try { window.turnstile.reset(turnstileWidget); } catch { /* ignore */ }
+    }
   }
 
   // ---------- progress UI
@@ -173,7 +209,12 @@
       urlInput.focus();
       return;
     }
+    if (health && health.turnstile_site_key && !turnstileToken) {
+      showError("Lütfen önce robot doğrulamasının tamamlanmasını bekle.");
+      return;
+    }
     const payload = {
+      turnstile_token: turnstileToken,
       url,
       format: selectedFormat(),
       auto_subtitle: autoSub.checked,
@@ -184,6 +225,7 @@
       clean_audio: cleanAudio.checked,
     };
     setBusy(true);
+    resetTurnstile();
     try {
       const r = await fetch("/api/process", {
         method: "POST",

@@ -8,8 +8,16 @@
 # caddy : HTTPS (automatic Let's Encrypt) in front of the api
 name: media-downloader-hub
 
+# Keep container logs small (Docker keeps them forever by default)
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   api:
+    logging: *logging
     build:
       context: ..
       dockerfile: deploy/Dockerfile
@@ -20,10 +28,12 @@ services:
       HF_HOME: /models
       POT_BASE_URL: http://pot:4416
       TRUST_PROXY_HEADERS: "1"
+      BLOCKLIST_FILE: /config/blocklist.txt
     volumes:
       - downloads:/data
       - models:/models
       - ./cookies:/cookies
+      - ./config:/config:ro
     depends_on:
       - pot
       - warp
@@ -31,6 +41,7 @@ services:
       - "8000"
 
   pot:
+    logging: *logging
     image: brainicism/bgutil-ytdlp-pot-provider:latest
     restart: unless-stopped
     init: true
@@ -38,6 +49,7 @@ services:
       - "4416"
 
   warp:
+    logging: *logging
     image: caomingjun/warp:latest
     restart: unless-stopped
     device_cgroup_rules:
@@ -57,6 +69,7 @@ services:
       - "1080"
 
   caddy:
+    logging: *logging
     image: caddy:2-alpine
     restart: unless-stopped
     ports:

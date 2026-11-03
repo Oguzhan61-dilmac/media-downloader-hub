@@ -44,6 +44,10 @@ class Settings:
     health_check_url: str
     health_interval_sec: int
     desktop_app_url: str
+    contact_email: Optional[str]
+    turnstile_site_key: Optional[str]
+    turnstile_secret_key: Optional[str]
+    blocklist_file: Optional[str]
     cors_origins: List[str] = field(default_factory=list)
 
 
@@ -68,5 +72,11 @@ def load_settings() -> Settings:
         health_check_url=os.environ.get("HEALTH_CHECK_URL", "https://www.youtube.com/watch?v=jNQXAC9IVRw"),
         health_interval_sec=_env_int("HEALTH_INTERVAL_SEC", 3600),
         desktop_app_url=os.environ.get("DESKTOP_APP_URL", "https://github.com/Oguzhan61-dilmac/media-downloader-hub"),
+        contact_email=_env_str("CONTACT_EMAIL"),
+        # Cloudflare Turnstile bot protection; active only when both keys are set
+        turnstile_site_key=_env_str("TURNSTILE_SITE_KEY"),
+        turnstile_secret_key=_env_str("TURNSTILE_SECRET_KEY"),
+        # One URL fragment / video ID per line; matching links are refused (copyright takedowns)
+        blocklist_file=_env_str("BLOCKLIST_FILE"),
         cors_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()],
     )

@@ -16,9 +16,10 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Any, Deque, Dict, Optional
 
+import requests
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -75,12 +76,66 @@ class RateLimiter:
         with self._lock:
             self._hits.clear()
 
+    def purge(self):
+        """Forgets IPs with no request in the last hour (privacy: IPs live at most ~1 hour)."""
+        now = time.time()
+        with self._lock:
+            for key in list(self._hits):
+                hits = self._hits[key]
+                while hits and now - hits[0] > 3600:
+                    hits.popleft()
+                if not hits:
+                    del self._hits[key]
+
 
 rate_limiter = RateLimiter(settings.rate_limit_per_hour)
 executor = ThreadPoolExecutor(max_workers=settings.max_concurrent_jobs, thread_name_prefix="job")
 
 youtube_health: Dict[str, Any] = {"ok": None, "checked_at": None, "error": None}
 _stop_event = threading.Event()
+
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+
+
+def turnstile_enabled() -> bool:
+    return bool(settings.turnstile_site_key and settings.turnstile_secret_key)
+
+
+def verify_turnstile(token: Optional[str], client_ip: str) -> bool:
+    """Checks a Cloudflare Turnstile token (single use, valid for 5 minutes)."""
+    if not token:
+        return False
+    try:
+        r = requests.post(
+            TURNSTILE_VERIFY_URL,
+            data={"secret": settings.turnstile_secret_key, "response": token, "remoteip": client_ip},
+            timeout=10,
+        )
+        return bool(r.json().get("success"))
+    except Exception as ex:
+        print(f"[turnstile] verification error: {ex}", flush=True)
+        return False
+
+
+_blocklist_cache: Dict[str, Any] = {"mtime": None, "entries": []}
+
+
+def load_blocklist() -> list:
+    """Lines of BLOCKLIST_FILE (video IDs or URL fragments). Re-read only when the file changes."""
+    path = settings.blocklist_file
+    if not path or not os.path.isfile(path):
+        return []
+    mtime = os.path.getmtime(path)
+    if _blocklist_cache["mtime"] != mtime:
+        with open(path, encoding="utf-8") as f:
+            entries = [ln.strip().lower() for ln in f if ln.strip() and not ln.lstrip().startswith("#")]
+        _blocklist_cache.update(mtime=mtime, entries=entries)
+    return _blocklist_cache["entries"]
+
+
+def is_blocked(url: str) -> bool:
+    low = url.lower()
+    return any(entry in low for entry in load_blocklist())
 
 
 def _youtube_options(url: str) -> Dict[str, Any]:
@@ -103,6 +158,7 @@ def _cleanup_loop():
     while not _stop_event.wait(60):
         try:
             cleanup_expired(ttl)
+            rate_limiter.purge()
         except Exception as ex:  # never let the cleaner die
             print(f"[cleanup] {ex}", flush=True)
 
@@ -203,6 +259,7 @@ class ProcessRequest(BaseModel):
     subtitle_style: str = "hormozi"
     subtitle_position: str = "bottom"
     clean_audio: bool = False
+    turnstile_token: Optional[str] = Field(None, max_length=4096)
 
 
 def _client_ip(request: Request) -> str:
@@ -338,6 +395,8 @@ def health_check():
             "subtitles_enabled": settings.allow_subtitles,
         },
         "desktop_app_url": settings.desktop_app_url,
+        "contact_email": settings.contact_email,
+        "turnstile_site_key": settings.turnstile_site_key if turnstile_enabled() else None,
     }
 
 
@@ -356,19 +415,24 @@ def process_video(req: ProcessRequest, request: Request):
         if req.target_lang not in LANGS or req.subtitle_style not in STYLES or req.subtitle_position not in POSITIONS:
             raise HTTPException(status_code=400, detail="Geçersiz altyazı ayarı.")
 
+    if is_blocked(url):
+        raise HTTPException(status_code=451, detail="Bu içerik, hak sahibinin talebi üzerine indirmeye kapatıldı.")
+
+    client = _client_ip(request)
+    if turnstile_enabled() and not verify_turnstile(req.turnstile_token, client):
+        raise HTTPException(status_code=403, detail="Robot doğrulaması başarısız. Sayfayı yenileyip tekrar dene.")
+
     if task_manager.active_count() >= settings.max_queue:
         raise HTTPException(status_code=503, detail="Sunucu şu an çok yoğun. Birkaç dakika sonra tekrar deneyin.")
 
-    client = _client_ip(request)
     if not rate_limiter.allow(client):
         raise HTTPException(
             status_code=429,
             detail=f"Saatlik indirme sınırına ({settings.rate_limit_per_hour}) ulaştınız. Biraz sonra tekrar deneyin.",
         )
 
-    task_id = task_manager.create_task(
-        url=url, auto_subtitle=req.auto_subtitle, target_lang=req.target_lang, client_ip=client,
-    )
+    # the client IP is only kept in the rate limiter, not in the task record
+    task_id = task_manager.create_task(url=url, auto_subtitle=req.auto_subtitle, target_lang=req.target_lang)
     executor.submit(_run_job, task_id, req, url)
     return {"task_id": task_id, "status": "queued", "message": "İşlem sıraya alındı."}
 
@@ -405,6 +469,23 @@ def download_task_file(task_id: str):
     # FileResponse builds an RFC 5987 Content-Disposition itself, so Turkish
     # characters and emoji in titles are safe. Do not set the header by hand.
     return FileResponse(path=file_path, filename=os.path.basename(file_path), media_type=media_type)
+
+
+SITE_PAGES = ("", "kullanim-sartlari.html", "gizlilik.html")
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt(request: Request):
+    base = str(request.base_url).rstrip("/")
+    return PlainTextResponse(f"User-agent: *\nDisallow: /api/\nAllow: /\n\nSitemap: {base}/sitemap.xml\n")
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml(request: Request):
+    base = str(request.base_url).rstrip("/")
+    urls = "".join(f"  <url><loc>{base}/{page}</loc></url>\n" for page in SITE_PAGES)
+    xml = f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{urls}</urlset>\n'
+    return Response(content=xml, media_type="application/xml")
 
 
 # The website (web/index.html) is served from the same origin, so no CORS is needed.

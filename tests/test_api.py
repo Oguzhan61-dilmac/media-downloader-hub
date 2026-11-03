@@ -175,3 +175,46 @@ def test_word_timestamps_drive_subtitle_timing():
     srt = generate_srt([seg])
     # second block starts exactly when its first word ("altı", 6th word) is spoken: 2.5 s
     assert "00:00:02,500 -->" in srt
+
+
+def test_blocklist_refuses_taken_down_links(client, media_server, tmp_path, monkeypatch):
+    import backend.main as bm
+    blocklist = tmp_path / "blocklist.txt"
+    blocklist.write_text("# yorum satırı\ndQw4w9WgXcQ\n", encoding="utf-8")
+    monkeypatch.setattr(bm.settings, "blocklist_file", str(blocklist))
+    r = client.post("/api/process", json={"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"})
+    assert r.status_code == 451
+    base, _ = media_server
+    assert client.post("/api/process", json={"url": f"{base}/test.mp4"}).status_code == 200
+
+
+def test_turnstile_is_enforced_when_configured(client, media_server, monkeypatch):
+    import backend.main as bm
+    monkeypatch.setattr(bm.settings, "turnstile_site_key", "site")
+    monkeypatch.setattr(bm.settings, "turnstile_secret_key", "secret")
+    monkeypatch.setattr(bm, "verify_turnstile", lambda token, ip: token == "good-token")
+    base, _ = media_server
+    assert client.get("/api/health").json()["turnstile_site_key"] == "site"
+    assert client.post("/api/process", json={"url": f"{base}/test.mp4"}).status_code == 403
+    ok = client.post("/api/process", json={"url": f"{base}/test.mp4", "turnstile_token": "good-token"})
+    assert ok.status_code == 200
+
+
+def test_seo_and_legal_pages(client):
+    robots = client.get("/robots.txt")
+    assert robots.status_code == 200 and "Disallow: /api/" in robots.text and "sitemap.xml" in robots.text
+    sitemap = client.get("/sitemap.xml")
+    assert sitemap.status_code == 200 and "gizlilik.html" in sitemap.text
+    for page in ("/kullanim-sartlari.html", "/gizlilik.html", "/og-image.png"):
+        assert client.get(page).status_code == 200, page
+    missing = client.get("/boyle-bir-sayfa-yok")
+    assert missing.status_code == 404 and "Sayfa bulunamadı" in missing.text
+
+
+def test_rate_limiter_forgets_old_ips():
+    import backend.main as bm
+    limiter = bm.RateLimiter(5)
+    limiter.allow("1.2.3.4")
+    limiter._hits["1.2.3.4"][0] -= 4000  # pretend the request was over an hour ago
+    limiter.purge()
+    assert "1.2.3.4" not in limiter._hits

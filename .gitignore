@@ -53,3 +53,4 @@ deploy/.env
 deploy/cookies/
 data/
 .pytest_cache/
+deploy/config/

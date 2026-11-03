@@ -1,8 +1,12 @@
 # SITE_ADDRESS comes from deploy/.env
-#   example.com           -> automatic HTTPS for your domain
-#   1-2-3-4.sslip.io      -> automatic HTTPS without buying a domain (IP with dashes)
-#   :80                   -> plain HTTP (no certificate)
+#   ornek.com, www.ornek.com -> HTTPS for your domain; www is redirected to ornek.com
+#   1-2-3-4.sslip.io         -> automatic HTTPS without buying a domain (IP with dashes)
+#   :80                      -> plain HTTP (no certificate)
 {$SITE_ADDRESS::80} {
+	# one canonical address for search engines: www.ornek.com -> ornek.com
+	@www header_regexp www Host ^www\.(.+)$
+	redir @www https://{re.www.1}{uri} 308
+
 	encode gzip
 
 	request_body {
