@@ -19,11 +19,15 @@ if sys.stderr is None:
 # Ensure project root is in python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ui.app import MediaDownloaderApp
+from desktop_link import link_from_argv, register_protocol, add_bundled_tools_to_path
 
 def main():
+    add_bundled_tools_to_path()
+    register_protocol()  # makes "İndir" on the website open this app (mdhub:// links)
+    link = link_from_argv()
     try:
-        app = MediaDownloaderApp()
+        from ui.app import MediaDownloaderApp
+        app = MediaDownloaderApp(start_link=link)
         app.mainloop()
     except Exception as e:
         import traceback

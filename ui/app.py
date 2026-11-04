@@ -26,7 +26,7 @@ from ui.theme import (
 
 
 class MediaDownloaderApp(ctk.CTk):
-    def __init__(self):
+    def __init__(self, start_link: Optional[Dict[str, str]] = None):
         super().__init__()
 
         # Appearance configuration
@@ -46,6 +46,21 @@ class MediaDownloaderApp(ctk.CTk):
 
         # Build Interface
         self._create_layout()
+
+        # Opened from the website (mdhub:// link): fill in the link and start
+        if start_link:
+            self.after(400, lambda: self._start_from_link(start_link))
+
+    def _start_from_link(self, link: Dict[str, str]):
+        from desktop_link import FORMAT_INDEX
+        self.url_entry.delete(0, "end")
+        self.url_entry.insert(0, link["url"])
+        self.format_option_menu.set(FORMAT_OPTIONS[FORMAT_INDEX.get(link.get("format"), 0)])
+        self.auto_sub_check.deselect()  # plain download; subtitles stay opt-in in the app
+        self.append_log("Web sitesinden gelen bağlantı alındı.")
+        self.lift()
+        self.focus_force()
+        self._on_start_download()
 
     def _create_layout(self):
         """Builds all UI components inside scrollable main container."""

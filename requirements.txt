@@ -5,6 +5,8 @@ pyinstaller>=6.0.0
 faster-whisper>=1.0.0
 deep-translator>=1.11.4
 requests>=2.31.0
+# FFmpeg binary bundled into the desktop .exe (no separate install needed)
+imageio-ffmpeg>=0.5.1
 # REST API (python -m uvicorn backend.main:app)
 fastapi>=0.110
 uvicorn>=0.29

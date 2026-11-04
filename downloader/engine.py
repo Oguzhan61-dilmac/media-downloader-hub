@@ -183,6 +183,10 @@ class DownloaderTask:
         # yt-dlp picks per-client headers itself; forcing a desktop Chrome UA on mobile
         # clients is a common cause of 403s. Keep yt-dlp updated instead.
 
+        ffmpeg_path = _bundled_ffmpeg()
+        if ffmpeg_path:
+            ydl_opts["ffmpeg_location"] = ffmpeg_path
+
         if self.proxy:
             ydl_opts["proxy"] = self.proxy
         if self.cookies_file and os.path.isfile(self.cookies_file):
@@ -325,6 +329,18 @@ class DownloaderTask:
         except Exception as ex:
             self._log(f"Bilinmeyen Hata: {str(ex)}")
             self.on_completion(False, f"Beklenmeyen bir hata oluştu:\n{str(ex)}", None)
+
+
+def _bundled_ffmpeg() -> Optional[str]:
+    """FFmpeg for merging/MP3 when it isn't installed system-wide (desktop .exe ships imageio-ffmpeg)."""
+    import shutil
+    if shutil.which("ffmpeg"):
+        return None  # yt-dlp finds it on PATH itself
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
 
 
 def friendly_error(err_msg: str) -> str:

@@ -136,22 +136,18 @@ media-downloader-hub/
 
 ---
 
-## 🌐 Web Sitesi
+## 🌐 Web Sitesi (sunucusuz)
 
-Bağlantıyı yapıştır, MP4/MP3 olarak indir; istersen yapay zekâ altyazı ve Shorts klipleri ekle.
+`site/` klasörü GitHub Pages'te ücretsiz yayınlanır. Kullanıcı linki siteye yapıştırıp **İndir**'e bastığında
+site, bilgisayarındaki masaüstü uygulamasını `mdhub://` bağlantısıyla açar; indirme kullanıcının kendi
+bilgisayarında ve kendi internetiyle yapılır. Sunucu, bulut hesabı veya kart gerekmez.
 
-**Yerelde denemek için:**
+- **Uygulama:** her `v*` etiketinde GitHub Actions Windows `.exe` derler (FFmpeg ve Deno içinde) ve sürüme ekler.
+  Uygulama ilk açılışta `mdhub://` bağlantı türünü Windows'a kendisi kaydeder.
+- **Site:** `main` dalında `site/` değişince otomatik yayınlanır (`.github/workflows/pages.yml`).
+- **Kendi alan adın:** Settings → Pages → Custom domain.
 
-```bash
-pip install -r requirements.txt
-python -m uvicorn backend.main:app --port 8000
-# http://127.0.0.1:8000 adresini aç
-```
-
-**Ücretsiz yayınlamak için:** Oracle Cloud Always Free ARM sunucusuna tek betikle kurulum →
-[deploy/KURULUM.md](deploy/KURULUM.md). Sunucuda YouTube trafiği Cloudflare WARP ve PO token
-sağlayıcısı üzerinden geçer, sağlık kontrolü YouTube'u saatlik test eder; çalışmadığında site
-kullanıcıyı masaüstü uygulamasına yönlendirir.
+İsteğe bağlı sunuculu sürüm (FastAPI + Docker) `backend/`, `web/` ve `deploy/` klasörlerinde duruyor.
 
 **Testler:**
 

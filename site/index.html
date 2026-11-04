@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Media Downloader Hub — Linki yapıştır, videon hazır</title>
+  <meta name="description" content="Video bağlantısını yapıştır, MP4 veya MP3 olarak bilgisayarına indir. Ücretsiz ve açık kaynak. Yapay zekâ altyazı ve Shorts klipleri.">
+  <meta name="theme-color" content="#0F111A">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Media Downloader Hub — Linki yapıştır, videon hazır">
+  <meta property="og:description" content="Video bağlantısını yapıştır, MP4 veya MP3 olarak indir. Yapay zekâ altyazı ve Shorts klipleri.">
+  <meta property="og:image" content="og-image.png">
+  <meta property="og:locale" content="tr_TR">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="glow" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="./">
+      <img src="favicon.svg" alt="" width="28" height="28">
+      <span>Media Downloader Hub</span>
+    </a>
+    <a class="toplink" href="#nasil">Nasıl çalışır?</a>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1>Linki yapıştır,<br><span class="accent">videon hazır.</span></h1>
+      <p>YouTube, Rutube, X ve yüzlerce siteden MP4 ya da MP3 indir. İndirme doğrudan senin bilgisayarında yapılır: hızlı, ücretsiz, kayıt yok.</p>
+    </section>
+
+    <div class="banner" id="mobile-banner" hidden role="status">
+      <strong>Şu an Windows uygulaması var.</strong>
+      <span>Telefondan indirme yakında. Bu sayfayı bilgisayarından açıp linki oraya yapıştırabilirsin.</span>
+    </div>
+
+    <form class="card" id="form" novalidate>
+      <label class="label" for="url">Video bağlantısı</label>
+      <div class="url-row">
+        <input id="url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+               placeholder="https://www.youtube.com/watch?v=..." required>
+        <button type="button" class="btn ghost" id="paste-btn">Yapıştır</button>
+      </div>
+
+      <fieldset class="chips">
+        <legend class="label">Kalite</legend>
+        <label><input type="radio" name="format" value="best" checked><span>En iyi <small>otomatik</small></span></label>
+        <label><input type="radio" name="format" value="720p"><span>720p</span></label>
+        <label><input type="radio" name="format" value="480p"><span>480p</span></label>
+        <label><input type="radio" name="format" value="mp3"><span>MP3 <small>sadece ses</small></span></label>
+      </fieldset>
+
+      <p class="error" id="form-error" role="alert" hidden></p>
+
+      <button type="submit" class="btn primary" id="submit-btn">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>İndir</span>
+      </button>
+    </form>
+
+    <section class="card result" id="opened" hidden aria-live="polite">
+      <div class="result-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <p class="result-title">Uygulamada açılıyor</p>
+      <p class="muted">Tarayıcı "Media Downloader Hub açılsın mı?" diye sorarsa <b>Aç</b>'a bas. İndirme uygulamada başlar, dosya İndirilenler klasörüne kaydedilir.</p>
+      <p class="muted small" id="no-app-hint">Hiçbir şey olmadıysa uygulama henüz kurulu değil:</p>
+      <a class="btn primary" id="get-app" href="#" rel="noopener">Windows uygulamasını indir (ücretsiz)</a>
+      <button type="button" class="btn link" id="again-btn">Yeni bağlantı</button>
+    </section>
+
+    <section class="card how" id="nasil">
+      <h2>Nasıl çalışır?</h2>
+      <ol>
+        <li><b>Uygulamayı bir kez kur.</b> <a href="#" data-app-link>Windows uygulamasını indir</a>, çift tıklayıp aç. Kurulum yok; ilk açılışta bu siteyle bağlantısını kendisi kurar.</li>
+        <li><b>Linki buraya yapıştır, İndir'e bas.</b> Uygulama açılır ve videoyu senin internet bağlantınla indirir.</li>
+        <li><b>İstersen altyazı ekle.</b> Uygulamada yapay zekâ ile 7 dilde altyazı, Shorts klipleri ve gürültü temizleme var.</li>
+      </ol>
+      <p class="muted small">Windows SmartScreen "tanınmayan uygulama" uyarısı gösterirse <b>Ek bilgi → Yine de çalıştır</b>'ı seç. Uygulama açık kaynak; kodu <a href="https://github.com/Oguzhan61-dilmac/media-downloader-hub" target="_blank" rel="noopener">GitHub'da</a>.</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Yalnızca hakkına sahip olduğun ya da paylaşımına izin verilen içerikleri indir.</p>
+    <nav class="footer-links">
+      <a href="kullanim-sartlari.html">Kullanım Şartları</a>
+      <a href="gizlilik.html">Gizlilik</a>
+      <a href="https://github.com/Oguzhan61-dilmac/media-downloader-hub/issues" target="_blank" rel="noopener">İletişim / Telif bildirimi</a>
+      <a href="https://github.com/Oguzhan61-dilmac/media-downloader-hub" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
