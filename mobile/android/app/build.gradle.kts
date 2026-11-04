@@ -19,7 +19,8 @@ android {
         applicationId = "com.mediadownloader.hub.mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // youtubedl-android (yt-dlp + Python on the phone) needs Android 7.0+
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
@@ -29,13 +30,41 @@ android {
         versionName = flutter.versionName
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+    // Release signing: set by CI from the ANDROID_KEYSTORE_* secrets; falls back to debug keys.
+    // Keep using the same keystore so users can install updates over older versions.
+    val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+    signingConfigs {
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
         }
     }
+
+    buildTypes {
+        release {
+            signingConfig = if (keystorePath != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            // R8 would strip classes youtubedl-android loads by reflection
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
+    }
+
+    packaging {
+        // the bundled Python/yt-dlp binaries must be extracted to disk
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+}
+
+dependencies {
+    val youtubedlAndroid = "0.18.1"
+    implementation("io.github.junkfood02.youtubedl-android:library:$youtubedlAndroid")
+    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:$youtubedlAndroid")
 }
 
 kotlin {

@@ -33,8 +33,8 @@
     </section>
 
     <div class="banner" id="mobile-banner" hidden role="status">
-      <strong>Şu an Windows uygulaması var.</strong>
-      <span>Telefondan indirme yakında. Bu sayfayı bilgisayarından açıp linki oraya yapıştırabilirsin.</span>
+      <strong>iPhone desteklenmiyor.</strong>
+      <span>Apple bu tür uygulamalara izin vermiyor. Windows bilgisayarından ya da Android telefondan kullanabilirsin.</span>
     </div>
 
     <form class="card" id="form" novalidate>
@@ -68,16 +68,18 @@
       <p class="result-title">Uygulamada açılıyor</p>
       <p class="muted">Tarayıcı "Media Downloader Hub açılsın mı?" diye sorarsa <b>Aç</b>'a bas. İndirme uygulamada başlar, dosya İndirilenler klasörüne kaydedilir.</p>
       <p class="muted small" id="no-app-hint">Hiçbir şey olmadıysa uygulama henüz kurulu değil:</p>
-      <a class="btn primary" id="get-app" href="#" rel="noopener">Windows uygulamasını indir (ücretsiz)</a>
+      <a class="btn primary" id="get-app" href="#" rel="noopener">Uygulamayı indir (ücretsiz)</a>
+      <p class="muted small" id="apk-hint" hidden>APK'yı açarken "bilinmeyen uygulamalara izin ver" sorulursa izin ver. Uygulama Google Play'de değil, doğrudan GitHub'dan iner.</p>
       <button type="button" class="btn link" id="again-btn">Yeni bağlantı</button>
     </section>
 
     <section class="card how" id="nasil">
       <h2>Nasıl çalışır?</h2>
       <ol>
-        <li><b>Uygulamayı bir kez kur.</b> <a href="#" data-app-link>Windows uygulamasını indir</a>, çift tıklayıp aç. Kurulum yok; ilk açılışta bu siteyle bağlantısını kendisi kurar.</li>
+        <li><b>Uygulamayı bir kez kur.</b> <a href="#" data-win-link>Windows</a> için .exe dosyasını çift tıklayıp aç (kurulum yok). <a href="#" data-android-link>Android</a> için APK'yı indirip yükle.</li>
         <li><b>Linki buraya yapıştır, İndir'e bas.</b> Uygulama açılır ve videoyu senin internet bağlantınla indirir.</li>
-        <li><b>İstersen altyazı ekle.</b> Uygulamada yapay zekâ ile 7 dilde altyazı, Shorts klipleri ve gürültü temizleme var.</li>
+        <li><b>Android'de daha da kolayı:</b> YouTube'da <b>Paylaş → Media Downloader Hub</b>.</li>
+        <li><b>İstersen altyazı ekle.</b> Windows uygulamasında yapay zekâ ile 7 dilde altyazı, Shorts klipleri ve gürültü temizleme var.</li>
       </ol>
       <p class="muted small">Windows SmartScreen "tanınmayan uygulama" uyarısı gösterirse <b>Ek bilgi → Yine de çalıştır</b>'ı seç. Uygulama açık kaynak; kodu <a href="https://github.com/Oguzhan61-dilmac/media-downloader-hub" target="_blank" rel="noopener">GitHub'da</a>.</p>
     </section>

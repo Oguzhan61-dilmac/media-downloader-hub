@@ -1,3 +1,5 @@
+> ⚠️ **Not (Kasım 2026):** Uygulama artık videoyu telefonda indiriyor (yt-dlp). Google Play, YouTube'dan indirme yapan uygulamalara izin vermediği için uygulama Play Store yerine GitHub sürümlerinden APK olarak dağıtılıyor (`.github/workflows/release.yml`). Bu kılavuz yalnızca imzalama adımları için referans olarak duruyor.
+
 # 🚀 Google Play Store (AAB & Keystore) Yayınlama Kılavuzu
 
 Bu doküman, **Media Downloader Hub** mobil uygulamasının Google Play Console ortamına **Android App Bundle (.aab)** formatında imzalanarak yüklenmesi için gerekli tüm adımları içerir.

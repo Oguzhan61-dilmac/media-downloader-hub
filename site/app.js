@@ -1,8 +1,11 @@
 (() => {
   "use strict";
 
-  // Latest Windows build, attached to every GitHub release by .github/workflows/release-windows.yml
-  const APP_URL = "https://github.com/Oguzhan61-dilmac/media-downloader-hub/releases/latest/download/MediaDownloaderHub-Windows.exe";
+  // Latest builds, attached to every GitHub release by .github/workflows/release.yml
+  const RELEASES = "https://github.com/Oguzhan61-dilmac/media-downloader-hub/releases/latest/download/";
+  const WIN_URL = RELEASES + "MediaDownloaderHub-Windows.exe";
+  const APK_URL = RELEASES + "MediaDownloaderHub-Android.apk";
+  const ANDROID_PACKAGE = "com.mediadownloader.hub.mobile";
 
   const $ = (id) => document.getElementById(id);
   const form = $("form");
@@ -10,11 +13,24 @@
   const formError = $("form-error");
   const opened = $("opened");
 
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  if (isMobile) $("mobile-banner").hidden = false;
+  const ua = navigator.userAgent;
+  const isAndroid = /Android/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  if (isIOS) $("mobile-banner").hidden = false;
 
-  $("get-app").href = APP_URL;
-  document.querySelectorAll("[data-app-link]").forEach((a) => { a.href = APP_URL; });
+  const appUrl = isAndroid ? APK_URL : WIN_URL;
+  $("get-app").href = appUrl;
+  $("get-app").textContent = isAndroid ? "Android uygulamasını indir (APK)" : "Windows uygulamasını indir (ücretsiz)";
+  $("apk-hint").hidden = !isAndroid;
+  document.querySelectorAll("[data-win-link]").forEach((a) => { a.href = WIN_URL; });
+  document.querySelectorAll("[data-android-link]").forEach((a) => { a.href = APK_URL; });
+
+  // The website itself, used as the Android fallback when the app isn't installed
+  const here = window.location.href.split("#")[0].split("?")[0];
+  if (new URLSearchParams(window.location.search).get("app") === "missing") {
+    $("opened").hidden = false;
+    $("no-app-hint").hidden = false;
+  }
 
   function showError(msg) {
     formError.textContent = msg;
@@ -38,7 +54,11 @@
       return;
     }
     const format = form.querySelector('input[name="format"]:checked').value;
-    const link = `mdhub://download?url=${encodeURIComponent(url)}&format=${encodeURIComponent(format)}`;
+    const query = `url=${encodeURIComponent(url)}&format=${encodeURIComponent(format)}`;
+    // Android Chrome opens apps through intent:// links and can fall back to a page when the app is missing
+    const link = isAndroid
+      ? `intent://download?${query}#Intent;scheme=mdhub;package=${ANDROID_PACKAGE};S.browser_fallback_url=${encodeURIComponent(here + "?app=missing")};end`
+      : `mdhub://download?${query}`;
 
     form.dataset.lastLink = link; // also handy for debugging
     opened.hidden = false;

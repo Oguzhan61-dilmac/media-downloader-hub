@@ -1,11 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 
+/// Downloads run on the phone itself (yt-dlp via youtubedl-android, see MainActivity.kt).
+/// Links arrive from the website (mdhub://download?url=...) or the Android Share menu.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -13,267 +12,278 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+enum _Phase { starting, ready, downloading, done, failed }
+
 class _HomeScreenState extends State<HomeScreen> {
+  static const _methods = MethodChannel('mdhub/downloader');
+  static const _events = EventChannel('mdhub/progress');
+
+  static const Color _accent = Color(0xFF00E5FF);
+  static const Color _violet = Color(0xFF7C4DFF);
+  static const Color _input = Color(0xFF0F111A);
+  static const Color _border = Color(0xFF2E344E);
+
   final TextEditingController _urlController = TextEditingController();
-  final TextEditingController _serverController = TextEditingController(
-    text: 'http://10.0.2.2:8000', // Android emulator default
-  );
+  StreamSubscription<dynamic>? _sub;
 
-  bool _autoSubtitle = true;
-  String _selectedLang = 'tr';
-  bool _autoSplit = false;
-  bool _cleanAudio = false;
-  String _selectedStyle = 'hormozi';
-  String _selectedPosition = 'bottom';
-  bool _isProcessing = false;
-  
-  // Status Tracking State
-  String? _currentTaskId;
-  double _progressPct = 0.0;
-  String _stepName = 'İşlem İçin Hazır';
-  String _detailText = 'URL girip "Videoyu Hazırla ve İndir" butonuna basın.';
-  String? _errorMessage;
-  String? _downloadedFilePath;
-  Timer? _statusTimer;
+  _Phase _phase = _Phase.starting;
+  String _format = 'best';
+  double _progress = 0;
+  String _status = 'Hazırlanıyor... (ilk açılış birkaç saniye sürebilir)';
+  String? _savedName;
+  Map<String, String>? _pendingLink;
 
-  final Map<String, String> _languages = {
-    'Türkçe (tr)': 'tr',
-    'İngilizce (en)': 'en',
-    'İspanyolca (es)': 'es',
-    'Almanca (de)': 'de',
-    'Fransızca (fr)': 'fr',
-    'Arapça (ar)': 'ar',
-    'Rusça (ru)': 'ru',
-  };
-
-  final Map<String, String> _subtitleStyles = {
-    'Hormozi / Viral Pop-up': 'hormozi',
-    'Minimalist Beyaz Box': 'minimalist',
-    'Cyberpunk Neon': 'cyberpunk',
-  };
-
-  final Map<String, String> _subtitlePositions = {
-    'Alt (Shorts/Reels)': 'bottom',
-    'Orta Hizalama': 'center',
-    'Üst Hizalama': 'top',
+  static const _formats = {
+    'best': 'En iyi',
+    '720p': '720p',
+    '480p': '480p',
+    'mp3': 'MP3',
   };
 
   @override
-  void dispose() {
-    _statusTimer?.cancel();
-    _urlController.dispose();
-    _serverController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _sub = _events.receiveBroadcastStream().listen(_onEvent);
+    _methods.setMethodCallHandler((call) async {
+      if (call.method == 'onLink' && call.arguments is Map) {
+        _handleLink(Map<String, String>.from(call.arguments as Map));
+      }
+    });
+    _boot();
   }
 
-  Future<void> _pasteFromClipboard() async {
-    final data = await Clipboard.getData('text/plain');
-    if (!mounted) return;
-    if (data != null && data.text != null && data.text!.isNotEmpty) {
+  Future<void> _boot() async {
+    try {
+      final link = await _methods.invokeMethod<Map>('initialLink');
+      if (link != null) _pendingLink = Map<String, String>.from(link);
+      await _methods.invokeMethod('init');
+      if (!mounted) return;
       setState(() {
-        _urlController.text = data.text!.trim();
+        _phase = _Phase.ready;
+        _status = 'Bağlantıyı yapıştır ya da bir uygulamadan "Paylaş" ile gönder.';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Panodaki bağlantı yapıştırıldı!'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      final pending = _pendingLink;
+      _pendingLink = null;
+      if (pending != null) _handleLink(pending);
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _phase = _Phase.failed;
+        _status = 'Başlatılamadı: ${e.message ?? e.code}';
+      });
     }
   }
 
-  Future<void> _startProcess() async {
-    final url = _urlController.text.trim();
-    final serverUrl = _serverController.text.trim().replaceAll(RegExp(r'/$'), '');
-
-    if (url.isEmpty) {
-      _showSnackBar('Lütfen geçerli bir video URL\'si giriniz.', isError: true);
+  void _handleLink(Map<String, String> link) {
+    final url = link['url'] ?? '';
+    if (url.isEmpty) return;
+    if (_phase == _Phase.starting) {
+      _pendingLink = link;
       return;
     }
-
-    if (serverUrl.isEmpty) {
-      _showSnackBar('Lütfen sunucu adresini giriniz.', isError: true);
-      return;
-    }
-
     setState(() {
-      _isProcessing = true;
-      _progressPct = 0.0;
-      _stepName = 'Sunucuya Bağlanılıyor...';
-      _detailText = 'İstek gönderiliyor...';
-      _errorMessage = null;
-      _downloadedFilePath = null;
+      _urlController.text = url;
+      _format = _formats.containsKey(link['format']) ? link['format']! : 'best';
     });
-
-    try {
-      final response = await http.post(
-        Uri.parse('$serverUrl/api/process'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'url': url,
-          'auto_subtitle': _autoSubtitle,
-          'target_lang': _selectedLang,
-          'auto_split': _autoSplit,
-          'subtitle_style': _selectedStyle,
-          'subtitle_position': _selectedPosition,
-          'clean_audio': _cleanAudio,
-        }),
-      ).timeout(const Duration(seconds: 15));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _currentTaskId = data['task_id'];
-        _startPollingStatus(serverUrl, _currentTaskId!);
-      } else {
-        final err = jsonDecode(response.body);
-        _handleFailure(err['detail'] ?? 'Sunucu işlemi başlatamadı.');
-      }
-    } catch (e) {
-      _handleFailure('Sunucuya erişilemedi: $e');
-    }
+    if (_phase != _Phase.downloading) _start();
   }
 
-  void _startPollingStatus(String serverUrl, String taskId) {
-    _statusTimer?.cancel();
-    _statusTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      try {
-        final response = await http.get(
-          Uri.parse('$serverUrl/api/status/$taskId'),
-        );
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          final status = data['status'];
-          final pct = (data['progress_pct'] as num).toDouble();
-          final step = data['step_name'] ?? 'İşleniyor...';
-          final detail = data['detail'] ?? '';
-
-          setState(() {
-            _progressPct = pct / 100.0;
-            _stepName = step;
-            _detailText = detail;
-          });
-
-          if (status == 'completed') {
-            timer.cancel();
-            _downloadFileToDevice(serverUrl, taskId);
-          } else if (status == 'failed') {
-            timer.cancel();
-            _handleFailure(data['error'] ?? 'İşlem sırasında hata oluştu.');
-          }
-        }
-      } catch (e) {
-        // Continue polling silently on transient network blips
-      }
-    });
-  }
-
-  Future<void> _downloadFileToDevice(String serverUrl, String taskId) async {
-    setState(() {
-      _stepName = 'Dosya Telefona İndiriliyor...';
-      _detailText = 'Yerel depolamaya kaydediliyor...';
-    });
-
-    try {
-      final response = await http.get(
-        Uri.parse('$serverUrl/api/download/$taskId'),
-      );
-
-      if (response.statusCode == 200) {
-        final bytes = response.bodyBytes;
-        final dir = await getApplicationDocumentsDirectory();
-        final ext = _autoSplit ? 'zip' : 'mp4';
-        final fileName = 'media_hub_${DateTime.now().millisecondsSinceEpoch}.$ext';
-        final file = File('${dir.path}/$fileName');
-        await file.writeAsBytes(bytes);
-
+  void _onEvent(dynamic raw) {
+    if (raw is! Map || !mounted) return;
+    final event = Map<String, dynamic>.from(raw);
+    switch (event['type']) {
+      case 'progress':
+        final pct = (event['percent'] as num?)?.toDouble() ?? 0;
+        final eta = (event['eta'] as num?)?.toInt() ?? -1;
         setState(() {
-          _isProcessing = false;
-          _progressPct = 1.0;
-          _stepName = 'İşlem Tamamlandı! 🎉';
-          _detailText = 'Kaydedildi: ${file.path}';
-          _downloadedFilePath = file.path;
+          _progress = (pct.clamp(0, 100)) / 100.0;
+          _status = eta > 0 ? 'İndiriliyor... Kalan ~${_fmtSeconds(eta)}' : 'İndiriliyor...';
         });
-
-        _showSnackBar(_autoSplit ? 'Shorts klip arşivi (ZIP) indirildi!' : 'Video başarıyla indirildi!');
-      } else {
-        _handleFailure('Dosya indirme başarısız oldu.');
-      }
-    } catch (e) {
-      _handleFailure('Dosya telefona kaydedilemedi: $e');
+      case 'done':
+        setState(() {
+          _phase = _Phase.done;
+          _progress = 1;
+          _savedName = event['name'] as String?;
+          _status = 'İndirilenler › Media Downloader Hub klasörüne kaydedildi.';
+        });
+        _toast('İndirme tamamlandı!');
+      case 'cancelled':
+        setState(() {
+          _phase = _Phase.ready;
+          _progress = 0;
+          _status = 'İndirme iptal edildi.';
+        });
+      case 'error':
+        setState(() {
+          _phase = _Phase.failed;
+          _status = (event['message'] as String?) ?? 'İndirme başarısız oldu.';
+        });
     }
   }
 
-  void _handleFailure(String error) {
-    _statusTimer?.cancel();
+  Future<void> _start() async {
+    FocusScope.of(context).unfocus();
+    final url = _urlController.text.trim();
+    final uri = Uri.tryParse(url);
+    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https')) || uri.host.isEmpty) {
+      _toast('Lütfen http:// veya https:// ile başlayan bir bağlantı gir.', error: true);
+      return;
+    }
     setState(() {
-      _isProcessing = false;
-      _errorMessage = error;
-      _stepName = 'Hata Oluştu ❌';
-      _detailText = error;
+      _phase = _Phase.downloading;
+      _progress = 0;
+      _savedName = null;
+      _status = 'Video bilgileri alınıyor...';
     });
-    _showSnackBar(error, isError: true);
+    try {
+      await _methods.invokeMethod('download', {'url': url, 'format': _format});
+    } on PlatformException catch (e) {
+      setState(() {
+        _phase = _Phase.failed;
+        _status = e.message ?? 'İndirme başlatılamadı.';
+      });
+    }
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.redAccent : const Color(0xFF00E5FF),
-      ),
-    );
+  Future<void> _cancel() async {
+    await _methods.invokeMethod('cancel');
+  }
+
+  Future<void> _paste() async {
+    final data = await Clipboard.getData('text/plain');
+    final text = data?.text?.trim() ?? '';
+    if (text.isNotEmpty) setState(() => _urlController.text = text);
+  }
+
+  Future<void> _updateEngine() async {
+    _toast('yt-dlp güncelleniyor...');
+    try {
+      final status = await _methods.invokeMethod<String>('update');
+      _toast(status == 'ALREADY_UP_TO_DATE' ? 'yt-dlp zaten güncel.' : 'yt-dlp güncellendi.');
+    } on PlatformException catch (e) {
+      _toast('Güncellenemedi: ${e.message}', error: true);
+    }
+  }
+
+  String _fmtSeconds(int s) => s >= 60 ? '${s ~/ 60} dk ${s % 60} sn' : '$s sn';
+
+  void _toast(String message, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: error ? Colors.redAccent : _violet,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _urlController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final busy = _phase == _Phase.downloading || _phase == _Phase.starting;
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.video_library_rounded, color: Color(0xFF00E5FF)),
-            SizedBox(width: 8),
-            Text(
-              'Media Downloader Hub',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-          ],
-        ),
+        title: const Text('Media Downloader Hub', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'update') _updateEngine();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'update', child: Text("yt-dlp'yi güncelle")),
+            ],
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            // Server Address Settings Card
+            const Text(
+              'Linki yapıştır,\nvideon hazır.',
+              style: TextStyle(fontSize: 32, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -1),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'YouTube, Instagram, X ve yüzlerce siteden MP4 ya da MP3. İndirme telefonunda yapılır.',
+              style: TextStyle(color: Colors.grey, fontSize: 14),
+            ),
+            const SizedBox(height: 20),
             Card(
               child: Padding(
-                padding: const EdgeInsets.all(14.0),
+                padding: const EdgeInsets.all(16),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
-                      children: const [
-                        Icon(Icons.dns_rounded, size: 18, color: Color(0xFF00E5FF)),
-                        SizedBox(width: 6),
-                        Text(
-                          'REST API Sunucu Adresi',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                      ],
-                    ),
+                    const Text('VİDEO BAĞLANTISI',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey, letterSpacing: 1)),
                     const SizedBox(height: 8),
-                    TextField(
-                      controller: _serverController,
-                      style: const TextStyle(fontSize: 13),
-                      decoration: InputDecoration(
-                        hintText: 'http://10.0.2.2:8000 veya http://192.168.1.X:8000',
-                        isDense: true,
-                        filled: true,
-                        fillColor: const Color(0xFF0F111A),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFF2E344E)),
+                    Row(children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _urlController,
+                          enabled: !busy,
+                          keyboardType: TextInputType.url,
+                          style: const TextStyle(fontSize: 14),
+                          decoration: InputDecoration(
+                            hintText: 'https://www.youtube.com/watch?v=...',
+                            isDense: true,
+                            filled: true,
+                            fillColor: _input,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: _border),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: busy ? null : _paste,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Yapıştır'),
+                      ),
+                    ]),
+                    const SizedBox(height: 16),
+                    const Text('KALİTE',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey, letterSpacing: 1)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _formats.entries.map((e) {
+                        final selected = _format == e.key;
+                        return ChoiceChip(
+                          label: Text(e.value, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          selected: selected,
+                          onSelected: busy ? null : (_) => setState(() => _format = e.key),
+                          selectedColor: _accent.withValues(alpha: 0.18),
+                          side: BorderSide(color: selected ? _accent : _border),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      height: 52,
+                      child: FilledButton.icon(
+                        onPressed: busy ? null : _start,
+                        icon: const Icon(Icons.download_rounded),
+                        label: Text(
+                          _phase == _Phase.downloading ? 'İndiriliyor...' : 'İndir',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _accent,
+                          foregroundColor: const Color(0xFF062A31),
+                          disabledBackgroundColor: _border,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
                       ),
                     ),
@@ -282,354 +292,60 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 12),
-
-            // Main URL Input Card
             Card(
               child: Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '🔗 Video Bağlantısı',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _urlController,
-                            style: const TextStyle(fontSize: 13),
-                            decoration: InputDecoration(
-                              hintText: 'https://youtube.com/shorts/...',
-                              isDense: true,
-                              filled: true,
-                              fillColor: const Color(0xFF0F111A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFF2E344E)),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          onPressed: _pasteFromClipboard,
-                          icon: const Icon(Icons.content_paste_rounded, size: 16),
-                          label: const Text('Yapıştır', style: TextStyle(fontSize: 12)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF7C4DFF),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Subtitle Options Card
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: const [
-                            Icon(Icons.subtitles_rounded, color: Color(0xFF00E5FF), size: 20),
-                            SizedBox(width: 8),
-                            Text(
-                              'Otomatik Altyazı & Tipografi',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                            ),
-                          ],
-                        ),
-                        Switch(
-                          value: _autoSubtitle,
-                          activeTrackColor: const Color(0xFF00E5FF),
-                          onChanged: (val) {
-                            setState(() {
-                              _autoSubtitle = val;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    if (_autoSubtitle) ...[
-                      const Divider(color: Color(0xFF2E344E), height: 20),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Hedef Çeviri Dili:',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                          ),
-                          DropdownButton<String>(
-                            value: _selectedLang,
-                            dropdownColor: const Color(0xFF1A1D2B),
-                            style: const TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.bold),
-                            items: _languages.entries.map((e) {
-                              return DropdownMenuItem<String>(
-                                value: e.value,
-                                child: Text(e.key),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _selectedLang = val;
-                                });
-                              }
-                            },
-                          ),
-                        ],
+                    Row(children: [
+                      Icon(
+                        switch (_phase) {
+                          _Phase.done => Icons.check_circle_rounded,
+                          _Phase.failed => Icons.error_rounded,
+                          _ => Icons.info_outline_rounded,
+                        },
+                        color: switch (_phase) {
+                          _Phase.done => Colors.greenAccent,
+                          _Phase.failed => Colors.redAccent,
+                          _ => _accent,
+                        },
+                        size: 20,
                       ),
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Altyazı Stili:',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                          ),
-                          DropdownButton<String>(
-                            value: _selectedStyle,
-                            dropdownColor: const Color(0xFF1A1D2B),
-                            style: const TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.bold),
-                            items: _subtitleStyles.entries.map((e) {
-                              return DropdownMenuItem<String>(
-                                value: e.value,
-                                child: Text(e.key),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _selectedStyle = val;
-                                });
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Altyazı Hizalaması:',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                          ),
-                          DropdownButton<String>(
-                            value: _selectedPosition,
-                            dropdownColor: const Color(0xFF1A1D2B),
-                            style: const TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.bold),
-                            items: _subtitlePositions.entries.map((e) {
-                              return DropdownMenuItem<String>(
-                                value: e.value,
-                                child: Text(e.key),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _selectedPosition = val;
-                                });
-                              }
-                            },
-                          ),
-                        ],
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(_status, style: const TextStyle(fontSize: 14))),
+                    ]),
+                    if (_phase == _Phase.downloading || _phase == _Phase.starting) ...[
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: LinearProgressIndicator(
+                          value: _phase == _Phase.starting || _progress == 0 ? null : _progress,
+                          minHeight: 8,
+                          backgroundColor: _input,
+                          valueColor: const AlwaysStoppedAnimation(_accent),
+                        ),
                       ),
                     ],
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Creator Automation Options Card
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: const [
-                        Icon(Icons.auto_awesome_rounded, color: Color(0xFF7C4DFF), size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'İçerik Üretici Stüdyo Modülleri',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                      ],
-                    ),
-                    const Divider(color: Color(0xFF2E344E), height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
-                                '🎬 Shorts Kliplerine Böl (30-60s)',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Whisper duraklamalarından kesip ZIP paketler',
-                                style: TextStyle(fontSize: 11, color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Switch(
-                          value: _autoSplit,
-                          activeTrackColor: const Color(0xFF7C4DFF),
-                          onChanged: (val) {
-                            setState(() {
-                              _autoSplit = val;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
-                                '🎙️ Arka Plan Gürültüsünü Temizle (AI)',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'FFmpeg FFT gürültü filtresi & equalizer uygular',
-                                style: TextStyle(fontSize: 11, color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Switch(
-                          value: _cleanAudio,
-                          activeTrackColor: const Color(0xFF7C4DFF),
-                          onChanged: (val) {
-                            setState(() {
-                              _cleanAudio = val;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Process Button
-            SizedBox(
-              height: 52,
-              child: ElevatedButton.icon(
-                onPressed: _isProcessing ? null : _startProcess,
-                icon: _isProcessing
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.rocket_launch_rounded),
-                label: Text(
-                  _isProcessing ? 'İŞLENİYOR...' : '🚀 VİDEOYU HAZIRLA VE İNDİR',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00E5FF),
-                  foregroundColor: const Color(0xFF0F111A),
-                  disabledBackgroundColor: const Color(0xFF2E344E),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Dynamic Progress & Status Card
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _stepName,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: _errorMessage != null
-                                  ? Colors.redAccent
-                                  : const Color(0xFF00E5FF),
-                            ),
-                          ),
-                        ),
-                        Text(
-                          '%${(_progressPct * 100).toStringAsFixed(1)}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Color(0xFF7C4DFF),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: LinearProgressIndicator(
-                        value: _progressPct,
-                        minHeight: 10,
-                        backgroundColor: const Color(0xFF0F111A),
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          _errorMessage != null ? Colors.redAccent : const Color(0xFF00E5FF),
-                        ),
+                    if (_phase == _Phase.downloading)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(onPressed: _cancel, child: const Text('İptal et')),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      _detailText,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                    if (_downloadedFilePath != null) ...[
+                    if (_savedName != null) ...[
                       const SizedBox(height: 8),
-                      SelectableText(
-                        '📂 Kaydedilen Konum: $_downloadedFilePath',
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF00E5FF)),
-                      ),
+                      SelectableText('📁 $_savedName', style: const TextStyle(fontSize: 12, color: _accent)),
                     ],
                   ],
                 ),
               ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'İpucu: YouTube uygulamasında Paylaş → Media Downloader Hub ile doğrudan indirebilirsin.\n'
+              'Yalnızca hakkına sahip olduğun içerikleri indir.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+              textAlign: TextAlign.center,
             ),
           ],
         ),

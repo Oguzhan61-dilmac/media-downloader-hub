@@ -142,7 +142,7 @@ media-downloader-hub/
 site, bilgisayarındaki masaüstü uygulamasını `mdhub://` bağlantısıyla açar; indirme kullanıcının kendi
 bilgisayarında ve kendi internetiyle yapılır. Sunucu, bulut hesabı veya kart gerekmez.
 
-- **Uygulama:** her `v*` etiketinde GitHub Actions Windows `.exe` derler (FFmpeg ve Deno içinde) ve sürüme ekler.
+- **Uygulama:** `main` dalına her uygulama değişikliğinde GitHub Actions Windows `.exe` (FFmpeg ve Deno içinde) ve Android APK derleyip yeni bir sürüm yayınlar (`.github/workflows/release.yml`). Android uygulaması videoyu telefonda indirir; YouTube uygulamasındaki Paylaş menüsünden de çalışır.
   Uygulama ilk açılışta `mdhub://` bağlantı türünü Windows'a kendisi kaydeder.
 - **Site:** `main` dalında `site/` değişince otomatik yayınlanır (`.github/workflows/pages.yml`).
 - **Kendi alan adın:** Settings → Pages → Custom domain.
