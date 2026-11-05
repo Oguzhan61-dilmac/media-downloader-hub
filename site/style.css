@@ -380,3 +380,42 @@ form .btn.primary { margin-top: 20px; }
 .how li { color: #C9CEDD; }
 .how li b { color: var(--text); }
 .result .muted { max-width: 520px; margin: 6px auto; }
+
+/* nav */
+.nav { display: flex; gap: 6px; }
+.nav a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 15px; padding: 8px 12px; border-radius: 10px; }
+.nav a:hover { color: var(--text); }
+.nav a[aria-current="page"] { color: var(--text); background: var(--card-2); border: 1px solid var(--border); }
+
+/* studio */
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  min-height: 150px; padding: 20px; text-align: center; cursor: pointer;
+  border: 2px dashed var(--border); border-radius: 14px; background: var(--input); color: var(--accent);
+  transition: border-color .15s, background .15s;
+}
+.dropzone:hover, .dropzone.over { border-color: var(--accent); background: rgba(0, 229, 255, .05); }
+.drop-title { color: var(--text); font-weight: 700; }
+.preview { display: block; width: 100%; max-height: 360px; margin-top: 14px; border-radius: 12px; background: #000; }
+.chips-3 { grid-template-columns: repeat(3, 1fr); }
+.studio-grid { margin-top: 18px; }
+.studio-grid select { width: 100%; }
+.results-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.results-head .result-icon { margin: 0; }
+.result-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.result-item { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--input); }
+.result-item video { display: block; width: 100%; max-height: 420px; border-radius: 10px; background: #000; margin-bottom: 10px; }
+.result-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; word-break: break-word; }
+.btn.small-btn { width: auto; padding: 10px 18px; font-size: 15px; flex: none; }
+.progress-foot { justify-content: space-between; align-items: center; }
+
+@media (max-width: 560px) {
+  .chips-3 { grid-template-columns: 1fr; }
+  .nav a { padding: 6px 8px; font-size: 14px; }
+}
+
+.studio-promo { display: grid; gap: 6px; text-decoration: none; color: inherit; border-color: rgba(124, 77, 255, .45); background: linear-gradient(135deg, rgba(124, 77, 255, .16), rgba(0, 229, 255, .06)), var(--card); transition: transform .12s, border-color .15s; }
+.studio-promo:hover { transform: translateY(-2px); border-color: var(--violet); }
+.studio-promo .badge { justify-self: start; }
+.promo-title { font-size: 20px; font-weight: 800; }
+.promo-cta { color: var(--accent); font-weight: 700; margin-top: 4px; }

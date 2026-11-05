@@ -3,8 +3,8 @@
 
   // Latest builds, attached to every GitHub release by .github/workflows/release.yml
   const RELEASES = "https://github.com/Oguzhan61-dilmac/media-downloader-hub/releases/latest/download/";
-  const WIN_URL = RELEASES + "MediaDownloaderHub-Windows.exe";
-  const APK_URL = RELEASES + "MediaDownloaderHub-Android.apk";
+  const WIN_URL = RELEASES + "MedyaIndir-Windows.exe";
+  const APK_URL = RELEASES + "MedyaIndir-Android.apk";
   const ANDROID_PACKAGE = "com.mediadownloader.hub.mobile";
 
   const $ = (id) => document.getElementById(id);

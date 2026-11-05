@@ -61,7 +61,7 @@ def register_protocol() -> bool:
         import winreg
         base = rf"Software\Classes\{SCHEME}"
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as key:
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "URL:Media Downloader Hub")
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "URL:Medya İndir")
             winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command") as key:
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, _launch_command())

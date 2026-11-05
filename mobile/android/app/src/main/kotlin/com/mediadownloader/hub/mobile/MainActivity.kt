@@ -125,7 +125,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun outputDir(): File {
-        val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Media Downloader Hub")
+        val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Medya İndir")
         dir.mkdirs()
         return dir
     }

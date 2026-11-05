@@ -1,6 +1,6 @@
 # Theme & UI Configuration
 
-APP_TITLE = "Media Downloader Hub"
+APP_TITLE = "Medya İndir"
 APP_SUBTITLE = "Rutube & YouTube Masaüstü Video İndirici"
 APP_VERSION = "v1.0.0"
 

@@ -1,2 +1,4 @@
 User-agent: *
 Allow: /
+
+Sitemap: https://medyaindir.com.tr/sitemap.xml

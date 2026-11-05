@@ -34,7 +34,7 @@ def main():
         err_msg = traceback.format_exc()
         try:
             from tkinter import messagebox
-            messagebox.showerror("Başlatma Hatası", f"Media Downloader Hub başlatılırken hata oluştu:\n\n{e}\n\nDetay:\n{err_msg[:500]}")
+            messagebox.showerror("Başlatma Hatası", f"Medya İndir başlatılırken hata oluştu:\n\n{e}\n\nDetay:\n{err_msg[:500]}")
         except Exception:
             pass
         sys.exit(1)

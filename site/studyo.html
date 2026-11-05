@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Altyazı ve Shorts Stüdyosu — Medya İndir</title>
+  <meta name="description" content="Videona yapay zekâ ile otomatik altyazı ekle, Shorts/Reels kliplerine böl. Ücretsiz, kayıt yok, video cihazından çıkmaz.">
+  <meta name="theme-color" content="#0F111A">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Altyazı ve Shorts Stüdyosu — Medya İndir">
+  <meta property="og:description" content="Yapay zekâ ile otomatik altyazı ve dikey Shorts klipleri. Tarayıcında çalışır, video cihazından çıkmaz.">
+  <meta property="og:image" content="https://medyaindir.com.tr/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/jszip.min.js" defer></script>
+</head>
+<body>
+  <div class="glow" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="./">
+      <img src="favicon.svg" alt="" width="28" height="28">
+      <span>Medya İndir</span>
+    </a>
+    <nav class="nav">
+      <a href="./">İndir</a>
+      <a href="studyo.html" aria-current="page">Stüdyo</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1>Altyazı ve <span class="accent">Shorts stüdyosu</span></h1>
+      <p>Videona yapay zekâ ile otomatik altyazı ekle ya da 30–60 saniyelik dikey Shorts kliplerine böl. Her şey tarayıcında çalışır; videon hiçbir yere yüklenmez.</p>
+    </section>
+
+    <form class="card" id="studio-form" novalidate>
+      <label class="dropzone" id="drop" for="file">
+        <input type="file" id="file" accept="video/*,.mkv" hidden>
+        <svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><path d="M12 16V4m0 0l-4.5 4.5M12 4l4.5 4.5M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="drop-title">Video seç ya da buraya sürükle</span>
+        <span class="muted small" id="file-info">MP4, MOV, MKV, WEBM · en fazla 15 dakika</span>
+      </label>
+      <video id="preview" class="preview" controls playsinline hidden></video>
+
+      <fieldset class="chips chips-3">
+        <legend class="label">Ne yapılsın?</legend>
+        <label><input type="radio" name="mode" value="video" checked><span>Altyazılı video</span></label>
+        <label><input type="radio" name="mode" value="shorts"><span>Shorts klipleri <small>9:16 · 30–60 sn</small></span></label>
+        <label><input type="radio" name="mode" value="srt"><span>Sadece altyazı <small>.srt</small></span></label>
+      </fieldset>
+
+      <div class="studio-grid">
+        <label>Konuşma dili
+          <select name="lang">
+            <option value="">Otomatik algıla</option>
+            <option value="turkish">Türkçe</option>
+            <option value="english">İngilizce</option>
+            <option value="german">Almanca</option>
+            <option value="arabic">Arapça</option>
+            <option value="spanish">İspanyolca</option>
+            <option value="french">Fransızca</option>
+            <option value="russian">Rusça</option>
+          </select>
+        </label>
+        <label>Altyazı dili
+          <select name="output_lang">
+            <option value="same">Konuşulan dilde</option>
+            <option value="en">İngilizceye çevir</option>
+          </select>
+        </label>
+        <label>Doğruluk
+          <select name="model">
+            <option value="onnx-community/whisper-base">Dengeli (önerilen)</option>
+            <option value="onnx-community/whisper-tiny">Hızlı</option>
+            <option value="onnx-community/whisper-small">En doğru (yavaş, ~250 MB)</option>
+          </select>
+        </label>
+        <label>Stil
+          <select name="style">
+            <option value="viral">Viral (sarı, büyük harf)</option>
+            <option value="minimal">Minimal kutu</option>
+            <option value="neon">Neon</option>
+          </select>
+        </label>
+        <label>Konum
+          <select name="position">
+            <option value="bottom">Alt</option>
+            <option value="center">Orta</option>
+            <option value="top">Üst</option>
+          </select>
+        </label>
+      </div>
+
+      <p class="error" id="studio-error" role="alert" hidden></p>
+
+      <button type="submit" class="btn primary" id="start-btn" disabled>
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 4l14 8-14 8z" fill="currentColor"/></svg>
+        <span>Başlat</span>
+      </button>
+      <p class="hint">İlk kullanımda yapay zekâ modeli ve video motoru indirilir (yaklaşık 100 MB, sonra tarayıcıda saklanır). 1 dakikalık video bilgisayarda genelde 1–3 dakikada hazır olur; telefonda daha uzun sürer.</p>
+    </form>
+
+    <section class="card progress" id="studio-progress" hidden aria-live="polite">
+      <div class="progress-head">
+        <div>
+          <p class="step" id="s-step">Hazırlanıyor...</p>
+          <p class="detail" id="s-detail"></p>
+        </div>
+        <span class="pct" id="s-pct"></span>
+      </div>
+      <div class="bar"><div class="fill" id="s-fill"></div></div>
+      <div class="progress-foot">
+        <span class="muted small">Sekmeyi kapatma; işlem bu sayfada sürüyor.</span>
+        <button type="button" class="btn link" id="s-cancel">İptal et</button>
+      </div>
+    </section>
+
+    <section class="card" id="results" hidden>
+      <div class="results-head">
+        <div class="result-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="26" height="26"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <p class="result-title">Hazır</p>
+          <p class="muted small" id="result-time"></p>
+        </div>
+      </div>
+      <ul class="result-list" id="result-list"></ul>
+      <button type="button" class="btn link" id="again">Başka bir video</button>
+    </section>
+
+    <section class="card how">
+      <h2>Videon nerede?</h2>
+      <p class="muted">Önce <a href="./">İndir</a> sayfasından videonu indir, sonra indirilen dosyayı buraya seç. Windows uygulamasında altyazı Türkçe dahil 7 dile çevrilebilir.</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Yalnızca hakkına sahip olduğun içerikleri kullan. Videolar cihazından çıkmaz.</p>
+    <nav class="footer-links">
+      <a href="kullanim-sartlari.html">Kullanım Şartları</a>
+      <a href="gizlilik.html">Gizlilik</a>
+      <a href="https://github.com/Oguzhan61-dilmac/media-downloader-hub" target="_blank" rel="noopener">Açık kaynak</a>
+    </nav>
+  </footer>
+
+  <script type="module" src="studio.js"></script>
+</body>
+</html>

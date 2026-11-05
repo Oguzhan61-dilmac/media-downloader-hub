@@ -104,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _phase = _Phase.done;
           _progress = 1;
           _savedName = event['name'] as String?;
-          _status = 'İndirilenler › Media Downloader Hub klasörüne kaydedildi.';
+          _status = 'İndirilenler › Medya İndir klasörüne kaydedildi.';
         });
         _toast('İndirme tamamlandı!');
       case 'cancelled':
@@ -187,7 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final busy = _phase == _Phase.downloading || _phase == _Phase.starting;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Media Downloader Hub', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text('Medya İndir', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         actions: [
           PopupMenuButton<String>(
             onSelected: (v) {
@@ -342,7 +342,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'İpucu: YouTube uygulamasında Paylaş → Media Downloader Hub ile doğrudan indirebilirsin.\n'
+              'İpucu: YouTube uygulamasında Paylaş → Medya İndir ile doğrudan indirebilirsin.\n'
               'Yalnızca hakkına sahip olduğun içerikleri indir.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
               textAlign: TextAlign.center,

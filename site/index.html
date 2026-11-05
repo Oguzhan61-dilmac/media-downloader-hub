@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Media Downloader Hub — Linki yapıştır, videon hazır</title>
+  <title>Medya İndir — Linki yapıştır, videon hazır</title>
   <meta name="description" content="Video bağlantısını yapıştır, MP4 veya MP3 olarak bilgisayarına indir. Ücretsiz ve açık kaynak. Yapay zekâ altyazı ve Shorts klipleri.">
   <meta name="theme-color" content="#0F111A">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Media Downloader Hub — Linki yapıştır, videon hazır">
+  <meta property="og:title" content="Medya İndir — Linki yapıştır, videon hazır">
   <meta property="og:description" content="Video bağlantısını yapıştır, MP4 veya MP3 olarak indir. Yapay zekâ altyazı ve Shorts klipleri.">
-  <meta property="og:image" content="og-image.png">
+  <meta property="og:image" content="https://medyaindir.com.tr/og-image.png">
   <meta property="og:locale" content="tr_TR">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -21,9 +21,12 @@
   <header class="topbar">
     <a class="brand" href="./">
       <img src="favicon.svg" alt="" width="28" height="28">
-      <span>Media Downloader Hub</span>
+      <span>Medya İndir</span>
     </a>
-    <a class="toplink" href="#nasil">Nasıl çalışır?</a>
+    <nav class="nav">
+      <a href="./" aria-current="page">İndir</a>
+      <a href="studyo.html">Stüdyo</a>
+    </nav>
   </header>
 
   <main class="wrap">
@@ -66,19 +69,26 @@
         <svg viewBox="0 0 24 24" width="26" height="26"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </div>
       <p class="result-title">Uygulamada açılıyor</p>
-      <p class="muted">Tarayıcı "Media Downloader Hub açılsın mı?" diye sorarsa <b>Aç</b>'a bas. İndirme uygulamada başlar, dosya İndirilenler klasörüne kaydedilir.</p>
+      <p class="muted">Tarayıcı "Medya İndir açılsın mı?" diye sorarsa <b>Aç</b>'a bas. İndirme uygulamada başlar, dosya İndirilenler klasörüne kaydedilir.</p>
       <p class="muted small" id="no-app-hint">Hiçbir şey olmadıysa uygulama henüz kurulu değil:</p>
       <a class="btn primary" id="get-app" href="#" rel="noopener">Uygulamayı indir (ücretsiz)</a>
       <p class="muted small" id="apk-hint" hidden>APK'yı açarken "bilinmeyen uygulamalara izin ver" sorulursa izin ver. Uygulama Google Play'de değil, doğrudan GitHub'dan iner.</p>
       <button type="button" class="btn link" id="again-btn">Yeni bağlantı</button>
     </section>
 
+    <a class="card studio-promo" href="studyo.html">
+      <span class="badge">Yeni</span>
+      <span class="promo-title">Altyazı ve Shorts stüdyosu</span>
+      <span class="muted">İndirdiğin videoya yapay zekâ ile altyazı ekle, dikey Shorts kliplerine böl. Tarayıcında çalışır, kurulum yok.</span>
+      <span class="promo-cta">Stüdyoyu aç →</span>
+    </a>
+
     <section class="card how" id="nasil">
       <h2>Nasıl çalışır?</h2>
       <ol>
         <li><b>Uygulamayı bir kez kur.</b> <a href="#" data-win-link>Windows</a> için .exe dosyasını çift tıklayıp aç (kurulum yok). <a href="#" data-android-link>Android</a> için APK'yı indirip yükle.</li>
         <li><b>Linki buraya yapıştır, İndir'e bas.</b> Uygulama açılır ve videoyu senin internet bağlantınla indirir.</li>
-        <li><b>Android'de daha da kolayı:</b> YouTube'da <b>Paylaş → Media Downloader Hub</b>.</li>
+        <li><b>Android'de daha da kolayı:</b> YouTube'da <b>Paylaş → Medya İndir</b>.</li>
         <li><b>İstersen altyazı ekle.</b> Windows uygulamasında yapay zekâ ile 7 dilde altyazı, Shorts klipleri ve gürültü temizleme var.</li>
       </ol>
       <p class="muted small">Windows SmartScreen "tanınmayan uygulama" uyarısı gösterirse <b>Ek bilgi → Yine de çalıştır</b>'ı seç. Uygulama açık kaynak; kodu <a href="https://github.com/Oguzhan61-dilmac/media-downloader-hub" target="_blank" rel="noopener">GitHub'da</a>.</p>
